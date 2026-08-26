@@ -1,0 +1,20 @@
+﻿# Node & Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Python & Backend
+__pycache__/
+backend/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+venv/
+env/
+
+# Binaries & Temp files
+cloudflared.exe
+temp_ocr_*
+test_sample.pdf
+*.log
