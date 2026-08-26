@@ -1,19 +1,19 @@
 # 📚 Neural Book Software (SKIPS - PDF Chapter Extractor)
 
-Aplikasi berbasis web modern dan canggih untuk memecah (*split*), mengekstrak teks menggunakan OCR berkecepatan tinggi dengan multi-threading, serta mengekspor buku PDF per bab (*chapter*) ke format PDF dan Markdown (.zip).
+A modern, high-performance web application designed for splitting PDF books into custom chapters, performing ultra-fast parallel multi-threaded OCR text extraction, and batch exporting chapters into organized PDF and Markdown (.zip) formats.
 
 ---
 
-## ✨ Fitur Utama
+## ✨ Key Features
 
-- 📖 **PDF Chapter Splitting**: Deteksi dan pemisahan buku PDF berdasarkan rentang bab (*chapter ranges*).
-- ⚡ **Multi-threaded OCR Extraction**: Ekstraksi teks cepat dan paralel menggunakan background worker.
+- 📖 **Smart PDF Chapter Splitting**: Detect and define custom chapter page ranges seamlessly.
+- ⚡ **Multi-Threaded OCR Extraction**: Blazing-fast parallel OCR processing powered by background worker threads.
 - 📦 **Automated ZIP Export**:
-  - Format PDF: `<JudulBuku>_chapter_PDF.zip`
-  - Format Markdown: `<JudulBuku>_chapter_Markdown.zip`
-- 🖥️ **Full-stack Single Server**: Backend FastAPI sekaligus melayani UI React production.
-- 🔄 **Session Recovery**: Data sesi kerja disimpan dan dapat dipulihkan kapan saja.
-- 🚀 **One-Click Local Launcher**: Tersedia skrip `run_local.bat` untuk menjalankan aplikasi secara instan di Windows.
+  - PDF Format: `<BookTitle>_chapter_PDF.zip`
+  - Markdown Format: `<BookTitle>_chapter_Markdown.zip`
+- 🖥️ **Full-Stack Single Server**: Integrated FastAPI backend that directly serves the optimized React production UI.
+- 🔄 **Session Recovery & Persistence**: Automatic disk session recovery to prevent data loss.
+- 🚀 **One-Click Local Launcher**: Pre-configured `run_local.bat` script for instant Windows launch.
 
 ---
 
@@ -21,72 +21,72 @@ Aplikasi berbasis web modern dan canggih untuk memecah (*split*), mengekstrak te
 
 ### **Backend**
 - **Framework**: Python 3.10+ / [FastAPI](https://fastapi.tiangolo.com/)
-- **Server**: [Uvicorn](https://www.uvicorn.org/)
-- **PDF & OCR Processing**: `xhtml2pdf`, `markdown`, `aiofiles`, `python-multipart`
+- **ASGI Server**: [Uvicorn](https://www.uvicorn.org/)
+- **PDF & Document Engine**: `xhtml2pdf`, `markdown`, `aiofiles`, `python-multipart`
 
 ### **Frontend**
-- **Library/Framework**: [React 18](https://react.dev/) + [Vite](https://vitejs.dev/)
-- **Styling**: Modern Responsive UI (CSS3)
+- **Framework / Bundler**: [React 18](https://react.dev/) + [Vite](https://vitejs.dev/)
+- **Styling**: Modern Responsive UI (CSS3 with dark/light themed components)
 
 ---
 
-## 📁 Struktur Direktori
+## 📁 Directory Structure
 
 ```text
 Neural_Book_Software/
 ├── backend/
 │   ├── services/
-│   │   ├── pdf_service.py       # Pemrosesan dan pemotongan PDF
-│   │   ├── ocr_service.py       # Pipeline ekstraksi teks / OCR
-│   │   └── export_service.py    # Pembuatan arsip zip hasil ekspor
-│   ├── main.py                  # Entry point FastAPI & route API
-│   └── requirements.txt         # Daftar pustaka Python backend
+│   │   ├── pdf_service.py       # PDF splitting, rendering & page extraction
+│   │   ├── ocr_service.py       # OCR pipeline & text conversion
+│   │   └── export_service.py    # Multi-format ZIP archiving
+│   ├── main.py                  # FastAPI application entry & API endpoints
+│   └── requirements.txt         # Backend Python dependencies
 ├── frontend/
-│   ├── src/                     # Komponen UI React
-│   ├── public/                  # Static assets
-│   ├── package.json             # Dependensi Node.js frontend
-│   └── vite.config.js           # Konfigurasi bundler Vite
-├── .gitignore                   # File & folder yang diabaikan Git
-├── run_local.bat                # Shortcut launcher aplikasi (Windows)
-└── README.md                    # Dokumentasi proyek
+│   ├── src/                     # React application components & state
+│   ├── public/                  # Static assets & logos
+│   ├── package.json             # Frontend Node.js dependencies
+│   └── vite.config.js           # Vite build configuration
+├── .gitignore                   # Ignored files & runtime directories
+├── run_local.bat                # Windows one-click local launcher
+└── README.md                    # Project documentation
 ```
 
 ---
 
-## 🚀 Panduan Instalasi & Menjalankan
+## 🚀 Getting Started
 
-### 1. Prasyarat
-Pastikan Anda telah menginstal:
+### 1. Prerequisites
+Ensure you have the following installed on your machine:
 - [Python 3.10+](https://www.python.org/downloads/)
-- [Node.js 18+](https://nodejs.org/) (hanya diperlukan jika ingin memodifikasi / build frontend)
+- [Node.js 18+](https://nodejs.org/) *(Only needed if you modify or rebuild the frontend UI)*
 - [Git](https://git-scm.com/)
 
 ---
 
-### 2. Setup Backend
-1. Masuk ke direktori backend dan buat virtual environment:
+### 2. Backend Setup
+1. Navigate to the backend directory and create a virtual environment:
    ```bash
    cd backend
    python -m venv venv
    ```
-2. Aktifkan virtual environment:
+2. Activate the virtual environment:
    - **Windows**:
      ```bash
      .\venv\Scripts\activate
      ```
-   - **Linux / macOS**:
+   - **macOS / Linux**:
      ```bash
      source venv/bin/activate
      ```
-3. Pasang dependensi:
+3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
 ---
 
-### 3. Setup Frontend (Opsional - Jika Build Ulang)
-Jika Anda melakukan perubahan pada tampilan frontend:
+### 3. Frontend Setup (Optional - If Modifying UI)
+If you make changes to the React source code in `frontend/src`:
 ```bash
 cd frontend
 npm install
@@ -95,26 +95,25 @@ npm run build
 
 ---
 
-### 4. Menjalankan Aplikasi
+## 💻 Running the Application
 
-#### ⚡ Cara Cepat (Windows)
-Cukup klik dua kali file **`run_local.bat`** di direktori utama. Browser akan terbuka otomatis di `http://localhost:8000`.
+### ⚡ Quick Start (Windows)
+Double-click the **`run_local.bat`** file in the root folder. The backend server will start and automatically open your default browser at `http://localhost:8000`.
 
-#### 💻 Cara Manual
-Dari root direktori atau backend:
+### 🛠️ Manual Execution
+From the root or `backend` folder:
 ```bash
 cd backend
 python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
-Buka browser dan akses: [http://localhost:8000](http://localhost:8000)
+Open your browser and navigate to: [http://localhost:8000](http://localhost:8000)
 
 ---
 
-## 🔒 Catatan Keamanan (.env)
-Jangan mengunggah file `.env` atau kredensial sensitif ke repository publik. Gunakan `.gitignore` yang sudah disediakan untuk menjaga keamanan data lokal.
+## 🔒 Security Note (.env)
+Never commit `.env` files, API keys, or sensitive credentials to a public repository. The provided `.gitignore` is pre-configured to keep your local environment files secure.
 
 ---
 
-## 📄 Lisensi
-Didistribusikan di bawah lisensi MIT. Silakan gunakan dan kembangkan sesuai kebutuhan.
->>>>>>> 26d97d6 (initial commit)
+## 📄 License
+This project is licensed under the MIT License. Feel free to use, modify, and distribute as needed.
