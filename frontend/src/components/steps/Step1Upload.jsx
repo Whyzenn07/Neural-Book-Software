@@ -1,36 +1,41 @@
 /**
- * Step 1 - Upload PDF & Choose View
- * Matches reference HTML layout and functionality
+ * Step 1 - Upload PDF
+ * Clean single-focus upload zone with validation warning modals
  */
-import { useState, useRef, useMemo } from 'react'
-import PageGrid from '../PageGrid'
+import { useState, useRef } from 'react'
 
 export default function Step1Upload({ state, update, next }) {
   const [dragging, setDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [error, setError] = useState(null)
+  const [modalError, setModalError] = useState(null) // { title, message, type }
   const inputRef = useRef(null)
 
-  const { pageCount, fileName, matrixCols } = state
-
-  // Build pages array from pageCount (or mock 100 pages if not uploaded yet but demoing)
-  const pages = useMemo(
-    () => Array.from({ length: pageCount || 0 }, (_, i) => i + 1),
-    [pageCount]
-  )
+  const { fileName, pageCount, jobId } = state
 
   const handleFile = async (file) => {
     if (!file) return
+
+    // Validation: File format
     if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setError('Please select a PDF file.')
-      return
-    }
-    if (file.size > 100 * 1024 * 1024) {
-      setError('File too large. Maximum 100 MB.')
+      setModalError({
+        title: 'Invalid File Format',
+        message: 'This application only supports PDF files (.pdf). Please select a valid PDF document.',
+        type: 'format_error',
+      })
       return
     }
 
-    setError(null)
+    // Validation: File size
+    if (file.size > 100 * 1024 * 1024) {
+      setModalError({
+        title: 'File Too Large',
+        message: 'The file exceeds the maximum limit of 100 MB. Please compress your PDF first.',
+        type: 'size_error',
+      })
+      return
+    }
+
+    setModalError(null)
     setUploading(true)
 
     try {
@@ -48,22 +53,33 @@ export default function Step1Upload({ state, update, next }) {
       update({
         jobId: data.job_id,
         fileName: data.filename,
+        cleanName: data.clean_name,
         pageCount: totalPages,
         startPage: 1,
         endPage: totalPages,
         indexPage: Math.min(5, totalPages),
+        removedPages: [],
         filteredPages: Array.from({ length: totalPages }, (_, i) => i + 1),
         chapters: [],
       })
     } catch (err) {
-      setError(err.message)
+      setModalError({
+        title: 'Upload Failed',
+        message: err.message || 'An error occurred while processing your PDF on the server.',
+        type: 'upload_error',
+      })
     } finally {
       setUploading(false)
     }
   }
 
-  const onDragOver = (e) => { e.preventDefault(); setDragging(true) }
+  const onDragOver = (e) => {
+    e.preventDefault()
+    setDragging(true)
+  }
+
   const onDragLeave = () => setDragging(false)
+
   const onDrop = (e) => {
     e.preventDefault()
     setDragging(false)
@@ -73,21 +89,31 @@ export default function Step1Upload({ state, update, next }) {
   }
 
   const handleProceed = () => {
+    if (!jobId && !fileName) {
+      setModalError({
+        title: 'No PDF Uploaded',
+        message: 'Please upload a PDF file before proceeding to the next step.',
+        type: 'missing_file',
+      })
+      return
+    }
     next()
   }
 
   return (
-    <div>
-      <h2 className="step-title">
-        <i className="fas fa-file-pdf"></i> Upload PDF &amp; Choose View
-      </h2>
-      <p className="step-subtitle">
-        Upload your PDF, then select a matrix layout to view all pages.
-      </p>
+    <div className="step1-container">
+      <div className="step-header-text">
+        <h2 className="step-title">
+          <i className="fas fa-file-pdf text-amber"></i> Upload PDF Document
+        </h2>
+        <p className="step-subtitle">
+          Upload your book or course material PDF to split it by chapter and extract content to Markdown.
+        </p>
+      </div>
 
-      {/* Upload Zone */}
+      {/* Upload Zone Card */}
       <div
-        className={`upload-zone${dragging ? ' dragging' : ''}`}
+        className={`upload-zone${dragging ? ' dragging' : ''}${fileName ? ' has-file' : ''}`}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
@@ -96,24 +122,50 @@ export default function Step1Upload({ state, update, next }) {
         tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
       >
-        <div className="upload-icon">
+        <div className="upload-icon-wrapper">
           {uploading ? (
             <div className="spinner-navy"></div>
+          ) : fileName ? (
+            <div className="file-success-icon">
+              <i className="fas fa-check-circle"></i>
+            </div>
           ) : (
-            <i className="fas fa-cloud-upload-alt"></i>
+            <div className="upload-cloud-icon">
+              <i className="fas fa-cloud-upload-alt"></i>
+            </div>
           )}
         </div>
-        <h4>
+
+        <h3 className="upload-headline">
           {uploading
-            ? 'Uploading and processing PDF...'
+            ? 'Uploading & analyzing PDF...'
+            : fileName
+            ? fileName
             : 'Drop your PDF here or click to browse'}
-        </h4>
-        <p>{uploading ? 'Please wait a moment' : 'Supports .pdf up to 100 MB'}</p>
+        </h3>
+
+        <p className="upload-subtext">
+          {uploading
+            ? 'Please wait a moment...'
+            : fileName
+            ? `Document ready • ${pageCount} pages detected`
+            : 'Supports .pdf up to 100 MB'}
+        </p>
 
         {fileName && (
-          <div className="file-name-pill">
-            <i className="fas fa-file-pdf" style={{ marginRight: 6 }}></i>
-            {fileName} ({pageCount} pages)
+          <div className="file-success-badge">
+            <i className="fas fa-file-pdf"></i>
+            <span>{pageCount} Pages Loaded</span>
+            <button
+              type="button"
+              className="btn-reupload"
+              onClick={(e) => {
+                e.stopPropagation()
+                inputRef.current?.click()
+              }}
+            >
+              <i className="fas fa-sync-alt"></i> Replace File
+            </button>
           </div>
         )}
 
@@ -121,40 +173,50 @@ export default function Step1Upload({ state, update, next }) {
           ref={inputRef}
           type="file"
           className="file-input-hidden"
-          accept=".pdf"
+          accept=".pdf,application/pdf"
           onChange={(e) => handleFile(e.target.files?.[0])}
         />
       </div>
 
-      {/* Error notification */}
-      {error && (
-        <div className="info-box error">
-          <i className="fas fa-exclamation-triangle" style={{ marginTop: 2 }}></i>
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* Page Grid */}
-      <PageGrid
-        pages={pages}
-        cols={matrixCols}
-        indexPage={state.indexPage}
-        onColsChange={(c) => update({ matrixCols: c })}
-        showControls={true}
-        maxHeight={400}
-      />
-
       {/* Action Bar */}
-      <div className="action-bar">
+      <div className="action-bar" style={{ marginTop: 32 }}>
         <button
           type="button"
           className="btn-primary"
           onClick={handleProceed}
           disabled={uploading}
+          style={{ minWidth: 220 }}
         >
-          Next: Define Ranges <i className="fas fa-arrow-right"></i>
+          Next: Range &amp; Filter <i className="fas fa-arrow-right"></i>
         </button>
       </div>
+
+      {/* Modal Popup Warning */}
+      {modalError && (
+        <div className="modal-overlay" onClick={() => setModalError(null)}>
+          <div className="modal-card modal-warning" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-icon-badge warning">
+              <i className="fas fa-exclamation-triangle"></i>
+            </div>
+            <h3 className="modal-title">{modalError.title}</h3>
+            <p className="modal-desc">{modalError.message}</p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-modal-primary"
+                onClick={() => {
+                  setModalError(null)
+                  if (modalError.type === 'missing_file' || modalError.type === 'format_error') {
+                    inputRef.current?.click()
+                  }
+                }}
+              >
+                {modalError.type === 'missing_file' ? 'Select PDF File' : 'Got it'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
