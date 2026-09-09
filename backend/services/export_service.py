@@ -441,10 +441,60 @@ def _resolve_and_embed_images(html_str: str, base_dir: Path | str | None = None)
     return re.sub(r'(<img\s+[^>]*?)src=["\']([^"\']+)["\']([^>]*>)', _img_replacer, html_str, flags=re.IGNORECASE)
 
 
-def _format_exhibit_placeholders(html_str: str) -> str:
-    """Format placeholder text like [Exhibit 1.1 — source figure 'img_001.png' not available...] into neat cards."""
+def _format_exhibit_placeholders(html_str: str, base_dir: Path | str | None = None) -> str:
+    """
+    Format exhibit placeholders.
+    If the source image exists in base_dir or images/, embed the actual image!
+    Otherwise, render a neat exhibit information card.
+    """
     def _rep(m):
         raw_text = m.group(1)
+        # Check if an image filename is mentioned (e.g. 'img_001.png' or "img_001.jpg")
+        fn_match = re.search(r"['\"]([^'\"]+\.(?:png|jpg|jpeg|webp|svg))['\"]", raw_text, re.IGNORECASE)
+        found_img_path = None
+        if fn_match:
+            fn = fn_match.group(1)
+            cand_p = Path(fn)
+            if cand_p.exists() and cand_p.is_file():
+                found_img_path = cand_p
+            elif base_dir:
+                b = Path(base_dir)
+                for c in [
+                    b / fn,
+                    b / "images" / cand_p.name,
+                    b / cand_p.name,
+                    b.parent / fn,
+                    b.parent / "images" / cand_p.name,
+                ]:
+                    if c.exists() and c.is_file():
+                        found_img_path = c
+                        break
+            if not found_img_path:
+                try:
+                    import tempfile
+                    upload_root = Path(tempfile.gettempdir()) / "ocr_book_maker"
+                    matches = [p for p in upload_root.glob(f"**/{cand_p.name}") if p.is_file()]
+                    if matches:
+                        found_img_path = matches[0]
+                except Exception:
+                    pass
+
+        if found_img_path and found_img_path.exists():
+            try:
+                ext = found_img_path.suffix.lower().lstrip(".")
+                mime = "image/png" if ext == "png" else ("image/jpeg" if ext in ["jpg", "jpeg"] else f"image/{ext}")
+                b64 = base64.b64encode(found_img_path.read_bytes()).decode("ascii")
+                title_part = raw_text.split("—")[0].strip() if "—" in raw_text else (raw_text.split("-")[0].strip() if "-" in raw_text else "Exhibit Figure")
+                return (
+                    f'<div class="exhibit-box">'
+                    f'<div class="exhibit-title"><b>{title_part}</b></div>'
+                    f'<div class="exhibit-image-wrap"><img src="data:{mime};base64,{b64}" alt="{title_part}" /></div>'
+                    f'<div class="exhibit-caption">{raw_text}</div>'
+                    f'</div>'
+                )
+            except Exception:
+                pass
+
         return (
             f'<div class="exhibit-placeholder-box">'
             f'<div class="exhibit-placeholder-title"><b>Exhibit Information</b></div>'
@@ -452,6 +502,165 @@ def _format_exhibit_placeholders(html_str: str) -> str:
             f'</div>'
         )
     return re.sub(r'\[(Exhibit\s+\d+[\.\d]*\s*[\—\-][^\]]+)\]', _rep, html_str)
+
+
+def _transform_mermaid_blocks(text: str) -> str:
+    """
+    Convert markdown ```mermaid ... ``` code blocks to <div class="mermaid">...</div>
+    so Mermaid.js renders them into crisp SVG vector diagrams.
+    """
+    pattern = r'```(?:mermaid)\s*\n(.*?)\n```'
+    def _rep(m):
+        code = m.group(1).strip()
+        return f'\n\n<div class="mermaid">\n{code}\n</div>\n\n'
+    return re.sub(pattern, _rep, text, flags=re.DOTALL | re.IGNORECASE)
+
+
+def generate_academic_cover_pdf(
+    book_title: str,
+    subtitle: str = "Course Reader & Academic Companion",
+    publisher: str = "SKIPS University Academic Press",
+    year: str = "2026",
+) -> bytes:
+    """Generate an executive academic typographic cover page PDF."""
+    clean_title = (book_title or "ACADEMIC TEXTBOOK").replace("_", " ").title()
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@page {{
+    size: A4 portrait;
+    margin: 0;
+}}
+body {{
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Georgia, serif;
+    background: #ffffff;
+    color: #0f172a;
+    -webkit-print-color-adjust: exact;
+}}
+.cover-container {{
+    width: 210mm;
+    height: 297mm;
+    box-sizing: border-box;
+    padding: 24mm 22mm 26mm 22mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    border: 12px solid #0f172a;
+    position: relative;
+}}
+.cover-inner-border {{
+    position: absolute;
+    top: 6mm;
+    left: 6mm;
+    right: 6mm;
+    bottom: 6mm;
+    border: 1.5px solid #0284c7;
+    pointer-events: none;
+}}
+.top-section {{
+    margin-top: 14mm;
+}}
+.series-tag {{
+    font-size: 10pt;
+    font-weight: 700;
+    letter-spacing: 3.5px;
+    text-transform: uppercase;
+    color: #0284c7;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}}
+.main-title {{
+    font-family: 'Merriweather', Georgia, 'Times New Roman', serif;
+    font-size: 32pt;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.2;
+    margin: 18mm 0 10mm 0;
+}}
+.accent-bar {{
+    width: 75mm;
+    height: 4.5px;
+    background: #0284c7;
+    margin: 10mm 0 12mm 0;
+    border-radius: 2px;
+}}
+.subtitle {{
+    font-size: 13.5pt;
+    font-weight: 400;
+    color: #475569;
+    line-height: 1.45;
+    max-width: 90%;
+    font-style: italic;
+}}
+.bottom-section {{
+    margin-bottom: 12mm;
+    padding-top: 12mm;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+}}
+.publisher-name {{
+    font-size: 12pt;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: 0.5px;
+}}
+.edition-label {{
+    font-size: 9.5pt;
+    color: #64748b;
+    margin-top: 4px;
+}}
+.seal-mark {{
+    font-size: 10pt;
+    font-weight: 800;
+    color: #0284c7;
+    border: 2px solid #0284c7;
+    padding: 6px 12px;
+    border-radius: 4px;
+    letter-spacing: 1px;
+}}
+</style>
+</head>
+<body>
+<div class="cover-container">
+  <div class="cover-inner-border"></div>
+  <div class="top-section">
+    <div class="series-tag">Academic Courseware • Higher Education</div>
+    <div class="main-title">{clean_title}</div>
+    <div class="accent-bar"></div>
+    <div class="subtitle">{subtitle}</div>
+  </div>
+  <div class="bottom-section">
+    <div>
+      <div class="publisher-name">{publisher}</div>
+      <div class="edition-label">Academic Reference Edition • {year}</div>
+    </div>
+    <div class="seal-mark">SKIPS CERTIFIED</div>
+  </div>
+</div>
+</body>
+</html>"""
+    edge_pdf = _render_via_edge_headless(html)
+    if edge_pdf:
+        return edge_pdf
+
+    doc = fitz.open()
+    A4_W, A4_H = 595.28, 841.89
+    p = doc.new_page(width=A4_W, height=A4_H)
+    p.draw_rect(fitz.Rect(20, 20, A4_W - 20, A4_H - 20), color=(0.06, 0.09, 0.16), width=3)
+    p.insert_text((50, 150), "ACADEMIC TEXTBOOK SERIES", fontsize=11, fontname="helv", color=(0.01, 0.52, 0.78))
+    p.insert_text((50, 220), clean_title[:45], fontsize=26, fontname="times-bold", color=(0.06, 0.09, 0.16))
+    p.insert_text((50, 280), subtitle[:65], fontsize=13, fontname="times-italic", color=(0.3, 0.35, 0.4))
+    p.insert_text((50, 750), f"{publisher} • {year}", fontsize=10, fontname="helv", color=(0.4, 0.4, 0.4))
+    out = io.BytesIO()
+    doc.save(out, garbage=1, deflate=True)
+    doc.close()
+    return out.getvalue()
+
 
 
 def markdown_to_pdf_bytes(
@@ -474,27 +683,34 @@ def markdown_to_pdf_bytes(
     Returns:
         PDF bytes (in-memory).
     """
-    # 1. Normalize table separators so markdown.markdown() parses tables properly
-    md_normalized = _normalize_markdown_tables(md_content)
+    # 1. Transform mermaid code blocks to <div class="mermaid">
+    md_with_mermaid = _transform_mermaid_blocks(md_content)
 
-    # 2. Parse Markdown to HTML (without nl2br to prevent breaking Markdown tables)
+    # 2. Normalize table separators so markdown.markdown() parses tables properly
+    md_normalized = _normalize_markdown_tables(md_with_mermaid)
+
+    # 3. Parse Markdown to HTML (without nl2br to prevent breaking Markdown tables)
     html_body = markdown.markdown(
         md_normalized,
         extensions=["extra", "tables", "fenced_code"]
     )
 
-    # 3. Resolve images to base64 data URIs & format exhibit placeholders
+    # Also catch language-mermaid pre blocks
+    html_body = re.sub(r'<pre><code class="language-mermaid">(.*?)</code></pre>', r'<div class="mermaid">\1</div>', html_body, flags=re.DOTALL)
+    html_body = re.sub(r'<pre><code class="mermaid">(.*?)</code></pre>', r'<div class="mermaid">\1</div>', html_body, flags=re.DOTALL)
+
+    # 4. Resolve images to base64 data URIs & format exhibit figures/placeholders
     html_body = _resolve_and_embed_images(html_body, base_dir=base_dir)
-    html_body = _format_exhibit_placeholders(html_body)
+    html_body = _format_exhibit_placeholders(html_body, base_dir=base_dir)
 
-    # 4. Resolve MathJax script URI
+    # 5. Resolve MathJax and Mermaid script URIs
     mathjax_local = Path(__file__).resolve().parent.parent / "assets" / "tex-mml-chtml.js"
-    if mathjax_local.exists():
-        mathjax_src = mathjax_local.as_uri()
-    else:
-        mathjax_src = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+    mathjax_src = mathjax_local.as_uri() if mathjax_local.exists() else "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
 
-    # 5. Academic Book Typography CSS (Booktabs table layout, Serif fonts, dynamic margins)
+    mermaid_local = Path(__file__).resolve().parent.parent / "assets" / "mermaid.min.js"
+    mermaid_src = mermaid_local.as_uri() if mermaid_local.exists() else "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"
+
+    # 6. Academic Book Typography CSS (Booktabs table layout, Serif fonts, dynamic margins, Mermaid styling)
     academic_css = """
     @page {
         size: A4 portrait;
@@ -551,12 +767,13 @@ def markdown_to_pdf_bytes(
         border-collapse: collapse;
         margin: 18px 0 22px 0;
         font-size: 9pt;
+        line-height: 1.45;
         page-break-inside: avoid;
     }
     th {
-        border-top: 2px solid #0f172a;
+        border-top: 2.2px solid #0f172a;
         border-bottom: 1.5px solid #0f172a;
-        padding: 8px 10px;
+        padding: 9px 12px;
         font-weight: bold;
         text-align: left;
         background-color: #f8fafc;
@@ -565,11 +782,14 @@ def markdown_to_pdf_bytes(
     }
     td {
         border-bottom: 1px solid #e2e8f0;
-        padding: 7px 10px;
+        padding: 8px 12px;
         vertical-align: top;
     }
+    tr:nth-child(even) td {
+        background-color: #fafbfd;
+    }
     tr:last-child td {
-        border-bottom: 2px solid #0f172a;
+        border-bottom: 2.2px solid #0f172a;
     }
     /* Academic Blockquotes & Callouts */
     blockquote {
@@ -598,7 +818,39 @@ def markdown_to_pdf_bytes(
         margin-bottom: 4px;
         font-size: 9pt;
     }
-    /* Exhibit Cards */
+    /* Exhibits, Figures & Graphic Charts */
+    .exhibit-box {
+        background-color: #f8fafc;
+        border: 1px solid #cbd5e1;
+        border-left: 4px solid #0284c7;
+        padding: 14px 16px;
+        margin: 18px 0;
+        border-radius: 4px;
+        page-break-inside: avoid;
+    }
+    .exhibit-title {
+        font-weight: bold;
+        color: #0369a1;
+        font-size: 9.5pt;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        margin-bottom: 10px;
+    }
+    .exhibit-image-wrap {
+        text-align: center;
+        margin: 12px 0;
+    }
+    .exhibit-image-wrap img {
+        max-width: 95%;
+        max-height: 420px;
+        border-radius: 4px;
+    }
+    .exhibit-caption {
+        font-size: 8.5pt;
+        color: #64748b;
+        font-style: italic;
+        text-align: center;
+        margin-top: 6px;
+    }
     .exhibit-placeholder-box {
         background-color: #f8fafc;
         border: 1px dashed #94a3b8;
@@ -619,9 +871,22 @@ def markdown_to_pdf_bytes(
         font-size: 8.5pt;
         font-style: italic;
     }
+    .mermaid {
+        text-align: center;
+        margin: 20px auto;
+        padding: 12px;
+        background-color: #fcfdfd;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        page-break-inside: avoid;
+    }
+    .mermaid svg {
+        max-width: 100% !important;
+        height: auto !important;
+    }
     img {
-        max-width: 90%;
-        max-height: 420px;
+        max-width: 95%;
+        max-height: 430px;
         display: block;
         margin: 16px auto;
         border-radius: 4px;
@@ -669,6 +934,23 @@ window.MathJax = {{
 }};
 </script>
 <script src="{mathjax_src}"></script>
+<script src="{mermaid_src}"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {{
+  if (window.mermaid) {{
+    try {{
+      mermaid.initialize({{
+        startOnLoad: true,
+        theme: 'neutral',
+        securityLevel: 'loose',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      }});
+    }} catch(e) {{
+      console.error("Mermaid init error:", e);
+    }}
+  }}
+}});
+</script>
 </head>
 <body>
 {html_body}
@@ -676,7 +958,7 @@ window.MathJax = {{
 </html>
 """
 
-    # 6. Primary Render Attempt: Edge Headless with MathJax vector SVG math
+    # 7. Primary Render Attempt: Edge Headless with MathJax vector SVG math & Mermaid diagrams
     edge_pdf_bytes = _render_via_edge_headless(full_html)
     if edge_pdf_bytes:
         final_bytes = edge_pdf_bytes
@@ -815,7 +1097,7 @@ def stamp_bottom_right_page_numbers(
             if i == 0 and skip_first_if_cover:
                 continue
 
-            curr_num = start_page + i
+            curr_num = start_page + (i - 1 if skip_first_if_cover else i)
             text = f"{page_prefix}{curr_num}"
             rect = page.rect
             text_width = len(text) * 6.0
@@ -842,14 +1124,50 @@ def merge_markdown_files_to_pdf(
     md_items: list[tuple[str, str]],
     output_pdf_path: str,
     images_dir: str | None = None,
+    cover_image_path: str | Path | None = None,
+    generate_cover: bool = True,
+    book_title: str | None = None,
     chapter_ranges: list[tuple[int, int]] | None = None,
 ) -> str:
     """
     Convert multiple Markdown chapters and merge them into one full-page PDF
-    with bottom-right page numbering stamped throughout.
+    with optional cover image / executive typographic cover, and bottom-right page numbering throughout.
     """
     merged_doc = fitz.open()
+    has_cover = False
 
+    # 1. Discover cover image or use explicitly provided cover
+    found_cover = cover_image_path
+    if not found_cover and images_dir:
+        img_p = Path(images_dir)
+        if img_p.exists():
+            cands = list(img_p.glob("*cover*.*")) + list(img_p.glob("00_*.*")) + list(img_p.glob("cover_page*.*"))
+            cands = [c for c in cands if c.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]]
+            if cands:
+                found_cover = str(cands[0])
+
+    # 2. Prepend Cover Page
+    if found_cover and Path(found_cover).exists():
+        try:
+            A4_W = 595.28
+            A4_H = 841.89
+            cover_page = merged_doc.new_page(width=A4_W, height=A4_H)
+            cover_page.insert_image(fitz.Rect(0, 0, A4_W, A4_H), filename=str(found_cover), keep_proportion=False)
+            has_cover = True
+        except Exception as e:
+            print(f"[export_service] Error inserting cover image: {e}")
+    elif generate_cover:
+        try:
+            t = book_title or (Path(md_items[0][0]).stem if md_items else "Academic Textbook")
+            cover_bytes = generate_academic_cover_pdf(book_title=t)
+            cover_doc = fitz.open("pdf", cover_bytes)
+            merged_doc.insert_pdf(cover_doc)
+            cover_doc.close()
+            has_cover = True
+        except Exception as e:
+            print(f"[export_service] Error generating cover page: {e}")
+
+    # 3. Append Chapter PDFs
     for idx, (name, content) in enumerate(md_items):
         title = Path(name).stem.replace("_", " ")
         pdf_bytes = markdown_to_pdf_bytes(content, title=title, base_dir=images_dir)
@@ -857,7 +1175,7 @@ def merge_markdown_files_to_pdf(
         merged_doc.insert_pdf(chapter_doc)
         chapter_doc.close()
 
-    # Stamp bottom right page numbers on the unified merged PDF (Page 1 of N onwards, skipping cover if desired)
+    # 4. Stamp bottom right page numbers (skipping cover page if present)
     out_buf = io.BytesIO()
     merged_doc.save(out_buf, garbage=1, deflate=True)
     merged_doc.close()
@@ -865,7 +1183,7 @@ def merge_markdown_files_to_pdf(
     stamped_bytes = stamp_bottom_right_page_numbers(
         out_buf.getvalue(),
         start_page=1,
-        skip_first_if_cover=False,
+        skip_first_if_cover=has_cover,
     )
 
     Path(output_pdf_path).parent.mkdir(parents=True, exist_ok=True)

@@ -840,25 +840,71 @@ async def download_all_skills_zip():
 # ── Markdown to Single Merged PDF Converter (Fast Native Engine) ─────────────
 
 @app.post("/api/convert-md-to-pdf")
-async def convert_markdown_files_to_merged_pdf(files: list[UploadFile] = File(...)):
+async def convert_markdown_files_to_merged_pdf(
+    files: list[UploadFile] = File(...),
+    generate_cover: bool = Query(True),
+):
     """
-    Accept multiple .md files, detect duplicate names, convert all into a single unified Merged PDF file.
+    Accept multiple .md files, images (.png, .jpg, .svg), and .zip archives.
+    Detect duplicate names, embed visual assets, and convert all into a single unified publication-ready PDF file.
     """
     if not files:
-        raise HTTPException(status_code=400, detail="No markdown files uploaded.")
+        raise HTTPException(status_code=400, detail="No files uploaded.")
 
     job_id = "mdconv-" + str(uuid.uuid4())[:8]
     job_dir = UPLOAD_DIR / job_id
     converted_dir = job_dir / "converted"
+    job_images_dir = job_dir / "images"
     job_dir.mkdir(parents=True, exist_ok=True)
     converted_dir.mkdir(parents=True, exist_ok=True)
+    job_images_dir.mkdir(parents=True, exist_ok=True)
 
     seen_names: dict[str, int] = {}
     duplicates: list[str] = []
     md_items: list[tuple[str, str]] = []
+    explicit_cover_path = None
+    uploaded_image_count = 0
 
     for f in files:
-        if not f.filename.lower().endswith(".md") and not f.filename.lower().endswith(".txt") and not f.filename.lower().endswith(".markdown"):
+        fname_lower = f.filename.lower()
+
+        # 1. Direct Image Uploads (.png, .jpg, .jpeg, .webp, .svg)
+        if any(fname_lower.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]):
+            content_bytes = await f.read()
+            img_dest = job_images_dir / f.filename
+            img_dest.write_bytes(content_bytes)
+            uploaded_image_count += 1
+            if "cover" in fname_lower or fname_lower.startswith("00_"):
+                explicit_cover_path = str(img_dest)
+            continue
+
+        # 2. ZIP Archive Unpacking (extracts images and markdown)
+        if fname_lower.endswith(".zip"):
+            content_bytes = await f.read()
+            import zipfile
+            try:
+                with zipfile.ZipFile(io.BytesIO(content_bytes), "r") as zf:
+                    for member in zf.infolist():
+                        if member.is_dir():
+                            continue
+                        m_lower = member.filename.lower()
+                        if any(m_lower.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]):
+                            dest_name = Path(member.filename).name
+                            target_p = job_images_dir / dest_name
+                            target_p.write_bytes(zf.read(member))
+                            uploaded_image_count += 1
+                            if "cover" in m_lower or dest_name.startswith("00_"):
+                                explicit_cover_path = str(target_p)
+                        elif any(m_lower.endswith(ext) for ext in [".md", ".markdown", ".txt"]):
+                            txt = zf.read(member).decode("utf-8", errors="ignore")
+                            m_name = Path(member.filename).name
+                            md_items.append((m_name, txt))
+            except Exception as e:
+                print(f"[convert-md-to-pdf] error unpacking zip {f.filename}: {e}")
+            continue
+
+        # 3. Markdown Chapter Files
+        if not fname_lower.endswith(".md") and not fname_lower.endswith(".txt") and not fname_lower.endswith(".markdown"):
             continue
 
         raw_name = f.filename
@@ -928,7 +974,6 @@ async def convert_markdown_files_to_merged_pdf(files: list[UploadFile] = File(..
         if name.startswith("FM_") or "front_matter" in name.lower():
             refined_md_items.append((name, content))
         else:
-            # Extract chapter number from filename if available (e.g. Module_01 -> 1, Chapter_2 -> 2)
             nums = [int(t) for t in re.findall(r'\d+', name)]
             chapter_num = nums[0] if nums else chapter_seq
             title = Path(name).stem.replace("_", " ")
@@ -936,17 +981,21 @@ async def convert_markdown_files_to_merged_pdf(files: list[UploadFile] = File(..
             refined_md_items.append((name, refined))
             chapter_seq += 1
 
-    # Locate images directory from job or recent uploads
-    resolved_images_dir = None
-    all_img_dirs = sorted(UPLOAD_DIR.glob("**/images"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if all_img_dirs:
-        resolved_images_dir = all_img_dirs[0]
+    # Locate images directory from current upload or recent uploads
+    resolved_images_dir = job_images_dir if list(job_images_dir.glob("*.*")) else None
+    if not resolved_images_dir:
+        all_img_dirs = sorted(UPLOAD_DIR.glob("**/images"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if all_img_dirs:
+            resolved_images_dir = all_img_dirs[0]
 
     try:
         merge_markdown_files_to_pdf(
             refined_md_items,
             str(merged_pdf_path),
-            images_dir=resolved_images_dir,
+            images_dir=str(resolved_images_dir) if resolved_images_dir else None,
+            cover_image_path=explicit_cover_path,
+            generate_cover=generate_cover,
+            book_title=base_name,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate Merged PDF file: {e}")
@@ -956,8 +1005,10 @@ async def convert_markdown_files_to_merged_pdf(files: list[UploadFile] = File(..
         "filename": merged_pdf_filename,
         "download_url": f"/api/download/merged-pdf/{job_id}/{merged_pdf_filename}",
         "file_count": len(refined_md_items),
+        "image_count": uploaded_image_count,
+        "has_cover": bool(explicit_cover_path or generate_cover),
         "duplicates_detected": duplicates,
-        "message": f"Successfully created 1 unified PDF: {merged_pdf_filename} ({len(refined_md_items)} chapters).",
+        "message": f"Successfully created 1 unified PDF: {merged_pdf_filename} ({len(refined_md_items)} chapters, {uploaded_image_count} visuals attached).",
     }
 
 
@@ -965,7 +1016,7 @@ async def convert_markdown_files_to_merged_pdf(files: list[UploadFile] = File(..
 async def convert_job_ocr_to_merged_pdf(job_id: str):
     """
     Take the current job's extracted Markdown chapters, refine raw OCR to Final OCR,
-    and generate a single Master Merged PDF file with bottom-right page numbers.
+    embed extracted visuals & cover page, and generate a single Master Merged PDF file.
     """
     job = _get_job(job_id)
     job_dir = UPLOAD_DIR / job_id
@@ -978,7 +1029,6 @@ async def convert_job_ocr_to_merged_pdf(job_id: str):
 
     md_files = list(ocr_dir.glob("*.md"))
     if not md_files:
-        # Check if zip exists and unpack
         ocr_zip = job.get("ocr_zip_path")
         if ocr_zip and Path(ocr_zip).exists():
             import zipfile
@@ -998,7 +1048,6 @@ async def convert_job_ocr_to_merged_pdf(job_id: str):
     md_files.sort(key=natural_sort_key)
     raw_md_items = [(f.name, f.read_text(encoding="utf-8", errors="ignore")) for f in md_files]
 
-    # Refine every raw chapter to Final Structured Markdown with explicit chapter numbering
     refined_md_items: list[tuple[str, str]] = []
     chapter_seq = 1
     for fname, raw_text in raw_md_items:
@@ -1012,11 +1061,22 @@ async def convert_job_ocr_to_merged_pdf(job_id: str):
             refined_md_items.append((fname, refined))
             chapter_seq += 1
 
+    # Check for cover image candidates in job
+    cover_cand = None
+    if images_dir.exists():
+        cands = list(images_dir.glob("*cover*.*")) + list(images_dir.glob("00_*.*")) + list(images_dir.glob("cover_page*.*"))
+        cands = [c for c in cands if c.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]]
+        if cands:
+            cover_cand = str(cands[0])
+
     try:
         merge_markdown_files_to_pdf(
             refined_md_items,
             str(merged_pdf_path),
-            images_dir=images_dir if images_dir.exists() else None,
+            images_dir=str(images_dir) if images_dir.exists() else None,
+            cover_image_path=cover_cand,
+            generate_cover=True,
+            book_title=clean_name,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate Merged PDF file: {e}")
@@ -1027,7 +1087,8 @@ async def convert_job_ocr_to_merged_pdf(job_id: str):
         "download_url": f"/api/download/merged-pdf/{job_id}/{merged_pdf_filename}",
         "file_count": len(refined_md_items),
         "has_visuals": images_dir.exists() and bool(list(images_dir.glob("*.*"))),
-        "message": f"Successfully created 1 unified PDF: {merged_pdf_filename} ({len(refined_md_items)} chapters).",
+        "has_cover": True,
+        "message": f"Successfully created 1 unified PDF: {merged_pdf_filename} ({len(refined_md_items)} chapters with visual elements & cover).",
     }
 
 
