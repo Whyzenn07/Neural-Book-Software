@@ -40,6 +40,7 @@ from services.export_service import (
     merge_markdown_files_to_pdf,
     create_md_to_pdf_zip_package,
     stamp_bottom_right_page_numbers,
+    markdown_to_pdf_bytes,
 )
 from services.markdown_generator import (
     generate_rich_markdown_page,
@@ -1161,32 +1162,70 @@ def _run_ocr_background(job_id: str, chapters: list[Chapter]):
     except Exception as e:
         print(f"[ocr_background] cover extraction warning: {e}")
 
-    # ── High-Speed OCR & Rich Markdown Extraction ────────────────────────
-    try:
-        with fitz.open(pdf_path) as doc:
-            for idx, p_num in enumerate(all_pages_to_extract, start=1):
+    # ── High-Fidelity OCR & Rich Markdown Extraction ─────────────────────────
+    def _process_single_page(p_num: int) -> tuple[int, str]:
+        try:
+            with fitz.open(pdf_path) as p_doc:
                 p_i = p_num - 1
-                if 0 <= p_i < doc.page_count:
-                    page = doc[p_i]
-                    raw_text = page.get_text("text").strip()
-                    
-                    if raw_text:
-                        # Clean hyphenation and detect LaTeX formulas
-                        cleaned = clean_hyphenation(raw_text)
-                        lines = [detect_and_format_latex(l) for l in cleaned.splitlines()]
-                        page_md = "\n".join(lines).strip()
-                    else:
-                        page_md = f"*Page {p_num} (Visual / Diagram Content)*"
-                    
-                    page_texts[p_num] = page_md
-                else:
-                    page_texts[p_num] = ""
+                if p_i < 0 or p_i >= p_doc.page_count:
+                    return p_num, ""
+                page = p_doc[p_i]
+                native_text = page.get_text("text").strip()
                 
-                jobs[job_id]["progress"] = idx
-                jobs[job_id]["message"] = f"Extracting page content: {idx} / {total_pages} pages"
+                # Check if native text is sufficient (not just page number or isolated header)
+                words = re.findall(r'[a-zA-Z]{3,}', native_text)
+                needs_ocr = (len(native_text) < 120) or (len(words) < 15)
+                
+                final_text = native_text
+                if needs_ocr:
+                    try:
+                        # Render page at high quality for OCR
+                        pix = page.get_pixmap(dpi=150)
+                        from PIL import Image
+                        import io as _io
+                        img = Image.open(_io.BytesIO(pix.tobytes("png")))
+                        ocr_result = ocr_page(img, lang="en")
+                        if ocr_result and len(ocr_result.strip()) > len(native_text):
+                            final_text = ocr_result.strip()
+                    except Exception as ocr_err:
+                        print(f"[ocr_background] OCR exception on page {p_num}: {ocr_err}")
 
-    except Exception as e:
-        print(f"[ocr_background] extraction error: {e}")
+                if final_text:
+                    cleaned = clean_hyphenation(final_text)
+                    lines = [detect_and_format_latex(l) for l in cleaned.splitlines()]
+                    page_md = "\n".join(lines).strip()
+                else:
+                    page_md = f"*Page {p_num} (Visual / Diagram Content)*"
+
+                return p_num, page_md
+        except Exception as pe:
+            print(f"[ocr_background] error processing page {p_num}: {pe}")
+            return p_num, f"*Page {p_num}*"
+
+    # Run multi-threaded page extraction (2-3 workers for optimal CPU stability & responsiveness)
+    import concurrent.futures
+    max_workers = min(3, max(1, (os.cpu_count() or 2) - 1))
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(_process_single_page, p_num): p_num
+            for p_num in all_pages_to_extract
+        }
+        for future in concurrent.futures.as_completed(future_map):
+            p_num = future_map[future]
+            try:
+                _, page_md = future.result()
+                page_texts[p_num] = page_md
+            except Exception as fe:
+                print(f"[ocr_background] future error page {p_num}: {fe}")
+                page_texts[p_num] = f"*Page {p_num}*"
+            
+            with progress_lock:
+                completed_count[0] += 1
+                curr_done = completed_count[0]
+            
+            jobs[job_id]["progress"] = curr_done
+            jobs[job_id]["message"] = f"OCR reading page {p_num} ({curr_done} / {total_pages} pages)..."
 
     # ── Generate Front Matter & Master TOC ───────────────────────────────────
     try:
@@ -1231,7 +1270,12 @@ def _run_ocr_background(job_id: str, chapters: list[Chapter]):
                     pages_for_ch.append(t_content)
 
             module_body = "\n\n---\n\n".join(pages_for_ch) if pages_for_ch else f"*Content for {ch_heading}*"
-            final_md_text = f"# {ch_heading}\n\n{module_body}\n"
+            final_md_text = refine_raw_ocr_to_final_markdown(
+                module_body,
+                chapter_idx=ch_idx,
+                title=clean_t or ch_heading,
+                book_name=clean_name,
+            )
 
             module_filename = make_safe_chapter_filename(ch_idx, raw_title, prefix="Module", ext="md")
             md_path = ocr_dir / module_filename

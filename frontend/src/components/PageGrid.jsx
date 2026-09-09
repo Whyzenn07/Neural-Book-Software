@@ -1,6 +1,7 @@
-﻿/**
- * PageGrid - reusable PDF page grid with matrix selector
- * Matches reference HTML layout and styling 1:1
+/**
+ * PageGrid - Legacy PDF page grid matrix component.
+ * Note: Active visual rendering is now handled directly by Step2PageRanges (iLovePDF interactive grid)
+ * and Step4PreviewResult (HD lightbox inspection). Retained for backwards compatibility.
  */
 export default function PageGrid({
   pages = [],

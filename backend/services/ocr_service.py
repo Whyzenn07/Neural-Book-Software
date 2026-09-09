@@ -42,6 +42,7 @@ except ImportError:
     HAS_TESSERACT = False
 
 try:
+    # pyrefly: ignore [missing-import]
     import pdfplumber
     HAS_PDFPLUMBER = True
 except ImportError:
@@ -278,22 +279,50 @@ def refine_raw_ocr_to_final_markdown(
     return f"# {full_heading}\n\n{body}\n"
 
 
-def ocr_page(image_path: str, lang: str = "en") -> str:
-    """Run OCR on a single image with native Windows OCR or PyTesseract fallback."""
-    if not os.path.exists(image_path):
+def ocr_page(image_input: str | Path | Image.Image, lang: str = "en") -> str:
+    """Run OCR on a single image (path or PIL Image) with native Windows OCR or PyTesseract fallback."""
+    img: Optional[Image.Image] = None
+    if isinstance(image_input, Image.Image):
+        img = image_input
+    elif isinstance(image_input, (str, Path)):
+        p = Path(image_input)
+        if not p.exists():
+            return ""
+        try:
+            img = Image.open(p)
+        except Exception:
+            return ""
+    else:
         return ""
 
-    if HAS_WINOCR:
+    if HAS_WINOCR and img is not None:
         try:
+            # 1. High-speed synchronous WinOCR
+            if hasattr(winocr, "recognize_pil_sync"):
+                res = winocr.recognize_pil_sync(img, lang=lang)
+                if res and isinstance(res, dict):
+                    lines = [l.get("text", "").strip() for l in res.get("lines", []) if l.get("text", "").strip()]
+                    if lines:
+                        return "\n".join(lines)
+                    return res.get("text", "").strip()
+
+            # 2. Async fallback
             import concurrent.futures
-            img = Image.open(image_path)
-            
             def _run_winocr_isolated():
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
                     res = loop.run_until_complete(winocr.recognize_pil(img, lang=lang))  # type: ignore
-                    return res.text.strip() if res and res.text else ""
+                    if res:
+                        if hasattr(res, "lines"):
+                            lines = [l.text.strip() for l in res.lines if hasattr(l, "text") and l.text.strip()]
+                            if lines:
+                                return "\n".join(lines)
+                        if hasattr(res, "text"):
+                            return res.text.strip()
+                        if isinstance(res, dict):
+                            return res.get("text", "").strip()
+                    return ""
                 finally:
                     loop.close()
 
@@ -303,11 +332,10 @@ def ocr_page(image_path: str, lang: str = "en") -> str:
                 if text:
                     return text
         except Exception as e:
-            pass
+            print(f"[ocr_page] WinOCR note: {e}")
 
-    if HAS_TESSERACT:
+    if HAS_TESSERACT and img is not None:
         try:
-            img = Image.open(image_path)
             text = pytesseract.image_to_string(img, lang="eng", config="--psm 6")  # type: ignore
             return text.strip()
         except Exception:

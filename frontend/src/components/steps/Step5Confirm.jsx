@@ -373,7 +373,7 @@ export default function Step5Confirm({ state, update, next, back }) {
           className="btn-secondary"
           onClick={back}
         >
-          <ArrowLeft size={16} /> Back to Step 4 (Chapters)
+          <ArrowLeft size={16} /> Back to Step 4 (Zoom & Review)
         </button>
         <button
           type="button"
