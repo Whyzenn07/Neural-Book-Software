@@ -714,39 +714,43 @@ def markdown_to_pdf_bytes(
     academic_css = """
     @page {
         size: A4 portrait;
-        margin: 20mm 20mm 25mm 20mm;
-        @bottom-right {
-            content: counter(page);
-        }
+        margin: 18mm 18mm 20mm 18mm;
+    }
+    * {
+        box-sizing: border-box;
     }
     body {
         font-family: 'Merriweather', Georgia, 'Times New Roman', serif;
-        font-size: 10pt;
-        line-height: 1.6;
+        font-size: 9.5pt;
+        line-height: 1.55;
         color: #1e293b;
         background-color: #ffffff;
+        orphans: 3;
+        widows: 3;
     }
     h1 {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-        font-size: 20pt;
+        font-size: 19pt;
         color: #0f172a;
-        margin-top: 24px;
-        margin-bottom: 12px;
-        padding-bottom: 6px;
+        margin-top: 20px;
+        margin-bottom: 10px;
+        padding-bottom: 5px;
         border-bottom: 2px solid #0f172a;
         font-weight: bold;
-        page-break-after: avoid;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
     }
     h2 {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         font-size: 13pt;
         color: #1e293b;
-        margin-top: 18px;
-        margin-bottom: 8px;
+        margin-top: 16px;
+        margin-bottom: 7px;
         border-bottom: 1px solid #cbd5e1;
         padding-bottom: 4px;
         font-weight: bold;
-        page-break-after: avoid;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
     }
     h3 {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -755,25 +759,46 @@ def markdown_to_pdf_bytes(
         margin-top: 14px;
         margin-bottom: 6px;
         font-weight: bold;
-        page-break-after: avoid;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+    }
+    h4, h5, h6 {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        font-size: 10pt;
+        color: #475569;
+        margin-top: 12px;
+        margin-bottom: 4px;
+        font-weight: bold;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+    }
+    /* Prevent headers from separating from subsequent paragraphs or lists */
+    h1 + *, h2 + *, h3 + *, h4 + *, h5 + *, h6 + * {
+        page-break-before: avoid !important;
+        break-before: avoid !important;
+    }
+    p:has(+ ol), p:has(+ ul) {
+        page-break-after: avoid !important;
+        break-after: avoid !important;
     }
     p {
-        margin-bottom: 8px;
+        margin-bottom: 6px;
         text-align: justify;
     }
     /* Academic Booktabs Tables */
     table {
         width: 100%;
         border-collapse: collapse;
-        margin: 18px 0 22px 0;
-        font-size: 9pt;
-        line-height: 1.45;
-        page-break-inside: avoid;
+        margin: 14px 0 18px 0;
+        font-size: 8.5pt;
+        line-height: 1.4;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
     }
     th {
-        border-top: 2.2px solid #0f172a;
+        border-top: 2px solid #0f172a;
         border-bottom: 1.5px solid #0f172a;
-        padding: 9px 12px;
+        padding: 7px 10px;
         font-weight: bold;
         text-align: left;
         background-color: #f8fafc;
@@ -782,119 +807,127 @@ def markdown_to_pdf_bytes(
     }
     td {
         border-bottom: 1px solid #e2e8f0;
-        padding: 8px 12px;
+        padding: 6px 10px;
         vertical-align: top;
     }
     tr:nth-child(even) td {
         background-color: #fafbfd;
     }
     tr:last-child td {
-        border-bottom: 2.2px solid #0f172a;
+        border-bottom: 2px solid #0f172a;
     }
     /* Academic Blockquotes & Callouts */
     blockquote {
         border-left: 3.5px solid #0284c7;
         background-color: #f8fafc;
-        padding: 10px 16px;
-        margin: 14px 0;
+        padding: 8px 14px;
+        margin: 12px 0;
         font-style: normal;
         color: #0f172a;
         border-radius: 0 4px 4px 0;
-        page-break-inside: avoid;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
     }
     /* Formula boxes & Math styles */
     .formula-box {
         background-color: #f8fafc;
         border: 1px solid #cbd5e1;
         border-left: 4px solid #0284c7;
-        padding: 10px 14px;
-        margin: 14px 0;
+        padding: 8px 12px;
+        margin: 12px 0;
         border-radius: 4px;
-        page-break-inside: avoid;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
     }
     .formula-title {
         font-weight: bold;
         color: #0369a1;
         margin-bottom: 4px;
-        font-size: 9pt;
+        font-size: 8.5pt;
     }
     /* Exhibits, Figures & Graphic Charts */
     .exhibit-box {
         background-color: #f8fafc;
         border: 1px solid #cbd5e1;
         border-left: 4px solid #0284c7;
-        padding: 14px 16px;
-        margin: 18px 0;
+        padding: 10px 14px;
+        margin: 12px 0;
         border-radius: 4px;
-        page-break-inside: avoid;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
     }
     .exhibit-title {
         font-weight: bold;
         color: #0369a1;
-        font-size: 9.5pt;
+        font-size: 9pt;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        margin-bottom: 10px;
+        margin-bottom: 6px;
     }
     .exhibit-image-wrap {
         text-align: center;
-        margin: 12px 0;
+        margin: 8px 0;
     }
     .exhibit-image-wrap img {
-        max-width: 95%;
-        max-height: 420px;
+        max-width: 90%;
+        max-height: 360px;
+        object-fit: contain;
         border-radius: 4px;
     }
     .exhibit-caption {
-        font-size: 8.5pt;
+        font-size: 8pt;
         color: #64748b;
         font-style: italic;
         text-align: center;
-        margin-top: 6px;
+        margin-top: 4px;
     }
     .exhibit-placeholder-box {
         background-color: #f8fafc;
         border: 1px dashed #94a3b8;
-        border-left: 4px solid #0284c7;
-        padding: 10px 16px;
-        margin: 14px 0;
+        border-left: 3.5px solid #0284c7;
+        padding: 6px 12px;
+        margin: 10px 0;
         border-radius: 4px;
-        page-break-inside: avoid;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
     }
     .exhibit-placeholder-title {
         font-weight: bold;
         color: #0369a1;
-        font-size: 9pt;
-        margin-bottom: 3px;
+        font-size: 8.5pt;
+        margin-bottom: 2px;
     }
     .exhibit-placeholder-body {
         color: #475569;
-        font-size: 8.5pt;
+        font-size: 8pt;
         font-style: italic;
     }
     .mermaid {
         text-align: center;
-        margin: 20px auto;
-        padding: 12px;
+        margin: 14px auto;
+        padding: 10px;
         background-color: #fcfdfd;
         border: 1px solid #e2e8f0;
         border-radius: 6px;
-        page-break-inside: avoid;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
     }
     .mermaid svg {
         max-width: 100% !important;
         height: auto !important;
     }
     img {
-        max-width: 95%;
-        max-height: 430px;
+        max-width: 90%;
+        max-height: 380px;
+        object-fit: contain;
         display: block;
-        margin: 16px auto;
+        margin: 12px auto;
         border-radius: 4px;
-        page-break-inside: avoid;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
     }
     code {
         font-family: Consolas, 'Courier New', monospace;
-        font-size: 8.5pt;
+        font-size: 8pt;
         background-color: #f1f5f9;
         padding: 2px 4px;
         border-radius: 3px;
@@ -902,18 +935,21 @@ def markdown_to_pdf_bytes(
     pre {
         background-color: #f8fafc;
         border: 1px solid #e2e8f0;
-        padding: 8px 12px;
+        padding: 6px 10px;
         border-radius: 4px;
         font-family: Consolas, 'Courier New', monospace;
-        font-size: 8.5pt;
-        page-break-inside: avoid;
+        font-size: 8pt;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
     }
     ul, ol {
-        margin: 8px 0 12px 20px;
+        margin: 6px 0 10px 20px;
         padding: 0;
     }
     li {
-        margin-bottom: 4px;
+        margin-bottom: 3px;
+        page-break-inside: avoid;
+        break-inside: avoid;
     }
     """
 
@@ -1152,7 +1188,35 @@ def merge_markdown_files_to_pdf(
             A4_W = 595.28
             A4_H = 841.89
             cover_page = merged_doc.new_page(width=A4_W, height=A4_H)
-            cover_page.insert_image(fitz.Rect(0, 0, A4_W, A4_H), filename=str(found_cover), keep_proportion=False)
+
+            # Auto-fit calculation to maintain exact aspect ratio and prevent distortion/stretching
+            pix = fitz.Pixmap(str(found_cover))
+            img_w = float(pix.width)
+            img_h = float(pix.height)
+            pix = None
+
+            aspect_img = img_w / img_h
+            aspect_a4 = A4_W / A4_H
+
+            # If image aspect ratio is close to A4 (within 6%), use full-page bleed
+            if abs(aspect_img - aspect_a4) < 0.06:
+                target_rect = fitz.Rect(0, 0, A4_W, A4_H)
+            else:
+                # Add elegant 12mm margins (34pt) and center the image proportionally
+                margin_x = 34.0
+                margin_y = 34.0
+                avail_w = A4_W - (margin_x * 2)
+                avail_h = A4_H - (margin_y * 2)
+
+                scale = min(avail_w / img_w, avail_h / img_h)
+                scaled_w = img_w * scale
+                scaled_h = img_h * scale
+
+                x0 = (A4_W - scaled_w) / 2.0
+                y0 = (A4_H - scaled_h) / 2.0
+                target_rect = fitz.Rect(x0, y0, x0 + scaled_w, y0 + scaled_h)
+
+            cover_page.insert_image(target_rect, filename=str(found_cover), keep_proportion=True)
             has_cover = True
         except Exception as e:
             print(f"[export_service] Error inserting cover image: {e}")

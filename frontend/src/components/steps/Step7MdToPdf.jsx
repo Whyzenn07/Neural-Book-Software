@@ -3,12 +3,12 @@
  * Features:
  * - Direct conversion of extracted or custom .md files into a single Unified PDF
  * - Synthesis guided by academic-ebook-creator standard
- * - Cover Image (Sampul Buku) & Executive Typographic Cover generation
+ * - Cover Image (Book Cover) Auto-Fit & Executive Typographic Cover generation
  * - Graphic Charts (Mermaid.js Vector Diagrams & high-res image figures)
  * - Academic Booktabs Tables & KaTeX MathJax Formula rendering
  * - Drag-and-drop file reordering & Smart Natural Auto-Sorting
  * - Duplicate file name detection & warning
- * - Crisp static Lucide icons
+ * - Full English user interface with crisp static Lucide icons
  */
 import { useState, useRef } from 'react'
 import {
@@ -86,7 +86,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
     )
 
     if (incoming.length === 0) {
-      alert('Silakan pilih file dengan ekstensi .md, .markdown, atau .txt')
+      alert('Please select files with .md, .markdown, or .txt extension')
       return
     }
 
@@ -103,7 +103,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
     })
 
     if (duplicateNames.length > 0) {
-      setDuplicateWarning(`Peringatan: Nama file duplikat terdeteksi: [${duplicateNames.join(', ')}]. File duplikat akan diindeks otomatis saat digabungkan.`)
+      setDuplicateWarning(`Warning: Duplicate file names detected: [${duplicateNames.join(', ')}]. Duplicate files will be automatically indexed when merged.`)
     } else {
       setDuplicateWarning(null)
     }
@@ -119,14 +119,14 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
     if (!fileList || fileList.length === 0) return
     const file = fileList[0]
     if (!file.type.startsWith('image/') && !file.name.match(/\.(png|jpg|jpeg|webp|svg)$/i)) {
-      alert('Silakan pilih file gambar untuk sampul (.png, .jpg, .jpeg, .webp, .svg)')
+      alert('Please select an image file for the book cover (.png, .jpg, .jpeg, .webp, .svg)')
       return
     }
     setCoverFile(file)
     const previewUrl = URL.createObjectURL(file)
     setCoverPreview(previewUrl)
     setMergedPdfResult(null)
-    addNotification('Sampul Terpasang', `Gambar sampul "${file.name}" berhasil diunggah.`, 'success')
+    addNotification('Cover Attached', `Cover image "${file.name}" uploaded successfully.`, 'success')
   }
 
   const removeCover = () => {
@@ -146,12 +146,12 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
       f.name.match(/\.(png|jpg|jpeg|webp|svg|zip)$/i)
     )
     if (incoming.length === 0) {
-      alert('Pilih file gambar (.png, .jpg, .svg) atau arsip (.zip) visual assets.')
+      alert('Please select image files (.png, .jpg, .svg) or an archive (.zip) of visual assets.')
       return
     }
     setVisualAssets((prev) => [...prev, ...incoming])
     setMergedPdfResult(null)
-    addNotification('Asset Visual Ditambahkan', `${incoming.length} file visual berhasil dilampirkan.`, 'success')
+    addNotification('Visual Assets Attached', `${incoming.length} visual asset file(s) attached.`, 'success')
   }
 
   const removeVisualAsset = (index) => {
@@ -238,12 +238,12 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.detail || 'Gagal mengonversi file Markdown ke PDF')
+        throw new Error(errData.detail || 'Failed to convert Markdown files to PDF')
       }
 
       const data = await res.json()
       setMergedPdfResult(data)
-      addNotification('Merge PDF Berhasil', `File ${data.filename} siap diunduh.`, 'pdf')
+      addNotification('Merge PDF Successful', `File ${data.filename} is ready to download.`, 'pdf')
     } catch (err) {
       alert(`Conversion error: ${err.message}`)
     } finally {
@@ -263,12 +263,12 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.detail || 'Gagal menggabungkan bab Markdown ke PDF')
+        throw new Error(errData.detail || 'Failed to merge Markdown chapters to PDF')
       }
 
       const data = await res.json()
       setJobMergedResult(data)
-      addNotification('Single Merged PDF Berhasil', `File ${data.filename} telah digabungkan menjadi satu buku PDF.`, 'pdf')
+      addNotification('Single Merged PDF Successful', `File ${data.filename} has been unified into a single PDF book.`, 'pdf')
     } catch (err) {
       alert(`Error: ${err.message}`)
     } finally {
@@ -300,7 +300,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
               <FileText size={24} className="title-svg-icon" /> Markdown (MD) to Single Merged PDF
             </h2>
             <p className="step-subtitle">
-              Konversi dan satukan bab Markdown menjadi <strong>Single Merged PDF (.pdf)</strong> publikasi lengkap dengan <strong>Gambar Sampul</strong>, <strong>Grafik/Diagram Vektor</strong>, <strong>Tabel Presisi</strong>, dan <strong>Rumus Matematika KaTeX</strong>.
+              Convert and unify Markdown chapters into a <strong>Single Merged PDF (.pdf)</strong> complete with <strong>Cover Page (Auto-Fit)</strong>, <strong>Vector Diagrams/Charts</strong>, <strong>Precision Tables</strong>, and <strong>KaTeX Math Formulas</strong>.
             </p>
           </div>
           <div className="header-action-wrap">
@@ -314,19 +314,19 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
       {/* Feature Capabilities Bar */}
       <div className="feature-pills-row">
         <div className="feature-pill active">
-          <BookOpen size={14} /> Gambar Sampul (Cover Page)
+          <BookOpen size={14} /> Cover Page (Auto-Fit Proportional)
         </div>
         <div className="feature-pill active">
-          <BarChart3 size={14} /> Grafik &amp; Bagan (Mermaid.js SVG)
+          <BarChart3 size={14} /> Charts &amp; Diagrams (Mermaid.js SVG)
         </div>
         <div className="feature-pill active">
-          <TableIcon size={14} /> Tabel Presisi (Booktabs Academic)
+          <TableIcon size={14} /> Precision Tables (Booktabs Academic)
         </div>
         <div className="feature-pill active">
-          <Sparkles size={14} /> Rumus KaTeX / MathJax
+          <Sparkles size={14} /> MathJax &amp; KaTeX Formulas
         </div>
         <div className="feature-pill active">
-          <ImageIcon size={14} /> Gambar &amp; Exhibit Resolusi Penuh
+          <ImageIcon size={14} /> High-Resolution Figures &amp; Exhibits
         </div>
       </div>
 
@@ -341,7 +341,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
               <div>
                 <h3 className="cloudconvert-title">Converter: Markdown (MD) to Single Merged PDF (.pdf)</h3>
                 <p className="cloudconvert-subtitle">
-                  Satukan seluruh bab Markdown dan elemen visual menjadi satu dokumen buku PDF standar akademik penerbitan.
+                  Merge all Markdown chapters and visual elements into a publication-ready PDF book conforming to academic publishing standards.
                 </p>
               </div>
             </div>
@@ -366,7 +366,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
               <div className="quick-ocr-info">
                 <Layers size={18} className="quick-ocr-svg" />
                 <span>
-                  Gabungkan seluruh <strong>{chapters.length || 'hasil ekstraksi'} Bab</strong> buku ini (lengkap dengan visual &amp; sampul) ke <strong>Single Merged PDF</strong>:
+                  Merge all <strong>{chapters.length || 'extracted'} Chapters</strong> of this book (with visuals &amp; cover) into a <strong>Single Merged PDF</strong>:
                 </span>
               </div>
               {jobMergedResult ? (
@@ -386,11 +386,11 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                 >
                   {convertingJobMd ? (
                     <>
-                      <div className="spinner-small" style={{ marginRight: 8 }}></div> Menggabungkan ke Single PDF...
+                      <div className="spinner-small" style={{ marginRight: 8 }}></div> Merging to Single PDF...
                     </>
                   ) : (
                     <>
-                      <FileText size={15} /> Gabungkan Bab Buku Ini ke Single PDF (.pdf)
+                      <FileText size={15} /> Merge Extracted Book to Single PDF (.pdf)
                     </>
                   )}
                 </button>
@@ -405,9 +405,9 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                 <AlertTriangle size={18} />
               </div>
               <div className="dup-text">
-                <strong>Peringatan: Nama File Duplikat Terdeteksi</strong>
+                <strong>Warning: Duplicate File Names Detected</strong>
                 <p>
-                  File berikut memiliki nama yang sama. File duplikat akan diindeks otomatis agar isi tidak tertimpa.
+                  The following files share the same name. Duplicate items will be automatically indexed during merging to prevent overwriting.
                 </p>
                 <div className="dup-names">
                   {duplicateWarning
@@ -423,7 +423,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                     ))}
                 </div>
               </div>
-              <button className="dup-dismiss" onClick={() => setDuplicateWarning(null)} title="Tutup peringatan">
+              <button className="dup-dismiss" onClick={() => setDuplicateWarning(null)} title="Dismiss warning">
                 <X size={16} />
               </button>
             </div>
@@ -442,10 +442,10 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
             <div className="md-drop-icon">
               <UploadCloud size={32} />
             </div>
-            <h4>Pilih atau Tarik File Bab .MD ke Sini</h4>
-            <p>Unggah file Markdown bab per bab untuk digabungkan menjadi dokumen buku PDF yang utuh</p>
+            <h4>Select or Drop .MD Chapter Files Here</h4>
+            <p>Upload Markdown files chapter-by-chapter to merge them into a complete unified PDF document</p>
             <button type="button" className="btn-browse-md" onClick={(e) => { e.stopPropagation(); mdInputRef.current?.click(); }}>
-              Browse File Markdown
+              Browse Markdown Files
             </button>
             <input
               ref={mdInputRef}
@@ -460,18 +460,18 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
           {/* Visual Assets & Cover Image Section */}
           <div className="visual-assets-section">
             <div className="visual-assets-section-title">
-              <ImageIcon size={18} /> Visual Assets &amp; Gambar Sampul (Opsional)
+              <ImageIcon size={18} /> Visual Assets &amp; Cover Page (Optional)
             </div>
             <div className="visual-assets-section-desc">
-              Tambahkan gambar sampul kustom atau lampiran grafik/diagram untuk disematkan ke dalam buku PDF.
+              Attach a custom book cover image or supplementary graphic charts, diagrams, and figures to embed into the unified PDF book.
             </div>
 
             <div className="visual-assets-grid">
-              {/* Card 1: Gambar Sampul Buku */}
+              {/* Card 1: Book Cover Image */}
               <div className="visual-asset-card">
                 <div className="visual-asset-card-header">
                   <div className="visual-card-title">
-                    <BookOpen size={16} /> Gambar Sampul (Cover Page)
+                    <BookOpen size={16} /> Book Cover (Cover Page)
                   </div>
                 </div>
 
@@ -480,9 +480,9 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                     <img src={coverPreview} alt="Cover Preview" className="cover-preview-thumb" />
                     <div className="cover-preview-meta">
                       <div className="cover-preview-name">{coverFile?.name}</div>
-                      <span className="cover-preview-tag">✓ Sampul Terpasang</span>
+                      <span className="cover-preview-tag">✓ Cover Image Attached</span>
                     </div>
-                    <button type="button" className="btn-remove-cover" onClick={removeCover} title="Hapus Sampul">
+                    <button type="button" className="btn-remove-cover" onClick={removeCover} title="Remove Cover">
                       <X size={16} />
                     </button>
                   </div>
@@ -498,7 +498,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                       }}
                     >
                       <ImageIcon size={24} style={{ color: '#0284c7' }} />
-                      <p><strong>Pilih Gambar Sampul</strong> (.png, .jpg)</p>
+                      <p><strong>Select Cover Image</strong> (.png, .jpg, .webp)</p>
                     </div>
                     <label className="cover-toggle-label">
                       <input
@@ -506,7 +506,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                         checked={generateCover}
                         onChange={(e) => setGenerateCover(e.target.checked)}
                       />
-                      Otomatis buat sampul akademik jika gambar tidak diunggah
+                      Auto-generate Academic Typographic Cover Page if no image provided
                     </label>
                   </div>
                 )}
@@ -519,11 +519,11 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                 />
               </div>
 
-              {/* Card 2: Gambar Grafik, Diagram & Bagan */}
+              {/* Card 2: Graphic Charts, Diagrams & Figures */}
               <div className="visual-asset-card">
                 <div className="visual-asset-card-header">
                   <div className="visual-card-title">
-                    <BarChart3 size={16} /> Gambar Grafik, Bagan &amp; Exhibit ({visualAssets.length})
+                    <BarChart3 size={16} /> Graphic Charts, Diagrams &amp; Exhibits ({visualAssets.length})
                   </div>
                   {visualAssets.length > 0 && (
                     <button
@@ -547,7 +547,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                   }}
                 >
                   <Plus size={20} style={{ color: '#0284c7' }} />
-                  <p><strong>Lampirkan Gambar / ZIP Visual</strong> (.png, .jpg, .svg, .zip)</p>
+                  <p><strong>Attach Images or Visual ZIP</strong> (.png, .jpg, .svg, .zip)</p>
                 </div>
                 <input
                   ref={assetInputRef}
@@ -568,7 +568,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                           type="button"
                           className="btn-remove-asset"
                           onClick={() => removeVisualAsset(idx)}
-                          title="Hapus"
+                          title="Remove"
                         >
                           <X size={12} />
                         </button>
@@ -586,10 +586,10 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
               <div className="selected-md-header">
                 <div className="md-header-left">
                   <span>
-                    <FileText size={16} /> <strong>{customMdFiles.length}</strong> Bab dalam Antrean Penggabungan
+                    <FileText size={16} /> <strong>{customMdFiles.length}</strong> Chapters in Merge Queue
                   </span>
                   <span className="drag-hint-badge">
-                    Drag &amp; Drop untuk atur urutan
+                    Drag &amp; Drop to reorder
                   </span>
                 </div>
                 <div className="md-header-actions">
@@ -600,7 +600,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                       setCustomMdFiles(sortFilesNaturally(customMdFiles, true))
                       setMergedPdfResult(null)
                     }}
-                    title="Urutkan A ke Z secara alami (Bab 1, 2...)"
+                    title="Auto-Sort A to Z naturally (Chapter 1, 2...)"
                   >
                     Auto-Sort A-Z
                   </button>
@@ -611,7 +611,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                       setCustomMdFiles(sortFilesNaturally(customMdFiles, false))
                       setMergedPdfResult(null)
                     }}
-                    title="Urutan Terbalik Z ke A"
+                    title="Reverse Sort Z to A"
                   >
                     Reverse Z-A
                   </button>
@@ -645,7 +645,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                       onDragEnd={handleItemDragEnd}
                       className={`md-drag-card ${isDragging ? 'is-dragging' : ''} ${isOver ? 'is-drag-over' : ''}`}
                     >
-                      <div className="drag-grip" title="Tarik untuk memindahkan urutan">
+                      <div className="drag-grip" title="Click & Drag to reorder">
                         <GripVertical size={16} />
                       </div>
 
@@ -673,7 +673,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                           className="btn-move-arrow"
                           disabled={idx === 0}
                           onClick={() => moveFile(idx, idx - 1)}
-                          title="Pindah ke Atas"
+                          title="Move Up"
                         >
                           <ChevronUp size={14} />
                         </button>
@@ -682,7 +682,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                           className="btn-move-arrow"
                           disabled={idx === customMdFiles.length - 1}
                           onClick={() => moveFile(idx, idx + 1)}
-                          title="Pindah ke Bawah"
+                          title="Move Down"
                         >
                           <ChevronDown size={14} />
                         </button>
@@ -693,7 +693,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                             const nextList = customMdFiles.filter((_, i) => i !== idx)
                             setCustomMdFiles(nextList)
                           }}
-                          title="Hapus file"
+                          title="Remove file"
                         >
                           <X size={14} />
                         </button>
@@ -709,7 +709,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                   <div className="merged-pdf-success-box">
                     <div className="merged-success-title">
                       <CheckCircle2 size={20} className="text-green" />
-                      <span>{mergedPdfResult.filename} Berhasil Dibuat!</span>
+                      <span>{mergedPdfResult.filename} Created Successfully!</span>
                     </div>
                     <a
                       href={mergedPdfResult.download_url}
@@ -729,11 +729,11 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                     {convertingMd ? (
                       <>
                         <div className="spinner-small" style={{ marginRight: 8 }}></div>
-                        Menggabungkan {customMdFiles.length} Bab &amp; Visual ke 1 PDF...
+                        Merging {customMdFiles.length} Chapters &amp; Visuals into 1 PDF...
                       </>
                     ) : (
                       <>
-                        <FileText size={16} /> Gabungkan Semua ke Single PDF ({customMdFiles.length} Bab{coverFile ? ' + Sampul' : ''}{visualAssets.length > 0 ? ` + ${visualAssets.length} Gambar` : ''})
+                        <FileText size={16} /> Merge All into Single PDF ({customMdFiles.length} Chapters{coverFile ? ' + Cover' : ''}{visualAssets.length > 0 ? ` + ${visualAssets.length} Visuals` : ''})
                       </>
                     )}
                   </button>
@@ -747,10 +747,10 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
       {/* Action Bar */}
       <div className="action-bar" style={{ marginTop: 36 }}>
         <button type="button" className="btn-secondary" onClick={back}>
-          <ArrowLeft size={16} /> Kembali ke AI Skills (Step 6)
+          <ArrowLeft size={16} /> Back to AI Skills (Step 6)
         </button>
         <button type="button" className="btn-primary" onClick={reset} style={{ minWidth: 240 }}>
-          <RotateCcw size={16} /> Proses Buku PDF Baru
+          <RotateCcw size={16} /> Process a New PDF Book
         </button>
       </div>
     </div>
