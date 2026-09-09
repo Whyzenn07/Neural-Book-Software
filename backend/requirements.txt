@@ -5,3 +5,5 @@ markdown==3.7
 xhtml2pdf==0.2.16
 python-dotenv==1.0.1
 aiofiles==24.1.0
+PyMuPDF>=1.24.0
+Pillow>=10.0.0

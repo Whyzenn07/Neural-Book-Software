@@ -15,7 +15,7 @@ if exist "venv\Scripts\python.exe" (
 )
 
 echo [1/2] Launching Python FastAPI Server on port 8000...
-start "SKIPS Backend Server" cmd /k "%PY_CMD% python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload"
+start "SKIPS Backend Server" cmd /k "%PY_CMD% -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload"
 
 echo [2/2] Opening browser at http://127.0.0.1:8000 ...
 timeout /t 3 /nobreak >nul
