@@ -194,7 +194,7 @@ def refine_raw_ocr_to_final_markdown(
     clean_t = title.replace(ch_label, "").replace(f"Module {chapter_idx}", "").strip(" :—-_")
     full_heading = f"{ch_label}: {clean_t}" if clean_t else ch_label
 
-    if ("| ---" in clean_body or "|:---" in clean_body) or ("<img " in clean_body):
+    if (any(marker in clean_body for marker in ["| ---", "|:---", "| :---", ":--- :", "<img ", "$$", "### "])) or clean_body.startswith("# "):
         if not clean_body.startswith("# "):
             return f"# {full_heading}\n\n{clean_body}\n"
         return f"{clean_body}\n"

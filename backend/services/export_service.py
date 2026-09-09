@@ -11,6 +11,10 @@ Features:
 import io
 import re
 import zipfile
+import subprocess
+import tempfile
+import base64
+import shutil
 from pathlib import Path
 import markdown
 from xhtml2pdf import pisa
@@ -311,33 +315,143 @@ def _make_link_callback(base_dir: Path | str | None = None):
     return link_callback
 
 
-def _sanitize_markdown_tables(md: str) -> str:
-    """
-    Ensure only valid tables with at least 2 columns and a proper header separator (|---|---|)
-    are treated as Markdown tables. Convert stray single-pipe lines into clean text to avoid 1-char vertical columns.
-    """
-    lines = md.splitlines()
-    out = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
-        if stripped.startswith("|"):
-            has_sep = False
-            for offset in [1, 2]:
-                if i + offset < len(lines):
-                    next_l = lines[i + offset].strip()
-                    if re.match(r'^\|\s*:?-+:?\s*\|\s*:?-+:?', next_l):
-                        has_sep = True
-                        break
-            if not has_sep and (not out or not out[-1].strip().startswith("|") or "|---" not in "\n".join(out[-4:])):
-                out.append(line.replace("|", " "))
-                i += 1
-                continue
+def _find_edge_executable() -> str | None:
+    """Detect Microsoft Edge or Chromium binary for headless PDF generation."""
+    candidates = [
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ]
+    for c in candidates:
+        if Path(c).exists():
+            return c
+    found = shutil.which("msedge") or shutil.which("chrome")
+    if found:
+        return found
+    return None
 
+
+def _render_via_edge_headless(html_content: str) -> bytes | None:
+    """
+    Render HTML to PDF using Edge Headless with MathJax SVG vector math support.
+    """
+    edge_bin = _find_edge_executable()
+    if not edge_bin:
+        return None
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="academic_edge_pdf_"))
+    html_path = temp_dir / "render_document.html"
+    pdf_path = temp_dir / "render_document.pdf"
+
+    try:
+        html_path.write_text(html_content, encoding="utf-8")
+        cmd = [
+            edge_bin,
+            "--headless=new",
+            "--disable-gpu",
+            "--allow-file-access-from-files",
+            "--no-pdf-header-footer",
+            "--run-all-compositor-stages-before-draw",
+            f"--print-to-pdf={pdf_path.resolve()}",
+            str(html_path.resolve()),
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=35)
+        if pdf_path.exists() and pdf_path.stat().st_size > 500:
+            return pdf_path.read_bytes()
+        else:
+            print(f"[export_service] Edge headless exit code {res.returncode}, stderr: {res.stderr[:300]}")
+    except Exception as e:
+        print(f"[export_service] Edge headless rendering error: {e}")
+    finally:
+        try:
+            if html_path.exists():
+                html_path.unlink()
+            if pdf_path.exists():
+                pdf_path.unlink()
+            temp_dir.rmdir()
+        except Exception:
+            pass
+
+    return None
+
+
+def _normalize_markdown_tables(md_text: str) -> str:
+    """
+    Ensure all tables have valid GFM separators so markdown.markdown() parses them into real <table> elements.
+    Fixes cases where separators lack outer pipes (e.g. ':--- :--- :---:' -> '| :--- | :--- | :---: |').
+    """
+    lines = md_text.splitlines()
+    out = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        # Detect table separator line like ':--- :--- :---' or '--- --- ---' that lack outer pipes
+        if re.match(r'^:?-+:?(?:\s+:?-+:?)+$', stripped):
+            if i > 0 and '|' in lines[i - 1]:
+                parts = stripped.split()
+                out.append('| ' + ' | '.join(parts) + ' |')
+                continue
         out.append(line)
-        i += 1
     return "\n".join(out)
+
+
+def _resolve_and_embed_images(html_str: str, base_dir: Path | str | None = None) -> str:
+    """
+    Convert image paths to base64 data URIs so that Edge Headless and xhtml2pdf
+    can load them without local filesystem security blocks.
+    """
+    def _img_replacer(match):
+        prefix = match.group(1)
+        src = match.group(2)
+        suffix = match.group(3)
+        if src.startswith("data:"):
+            return match.group(0)
+
+        found_path = None
+        cand = Path(src)
+        if cand.exists() and cand.is_file():
+            found_path = cand
+        elif base_dir:
+            b = Path(base_dir)
+            for c in [b / src, b / "images" / cand.name, b / cand.name, b.parent / src, b.parent / "images" / cand.name]:
+                if c.exists() and c.is_file():
+                    found_path = c
+                    break
+
+        if not found_path:
+            # Search globally in temp or upload folders
+            try:
+                from services.pdf_service import UPLOAD_DIR
+                matches = [p for p in UPLOAD_DIR.glob(f"**/{cand.name}") if p.is_file()]
+                if matches:
+                    found_path = matches[0]
+            except Exception:
+                pass
+
+        if found_path and found_path.exists():
+            try:
+                ext = found_path.suffix.lower().lstrip(".")
+                mime = "image/png" if ext == "png" else ("image/jpeg" if ext in ["jpg", "jpeg"] else f"image/{ext}")
+                b64 = base64.b64encode(found_path.read_bytes()).decode("ascii")
+                return f'{prefix}src="data:{mime};base64,{b64}"{suffix}'
+            except Exception:
+                pass
+        return match.group(0)
+
+    return re.sub(r'(<img\s+[^>]*?)src=["\']([^"\']+)["\']([^>]*>)', _img_replacer, html_str, flags=re.IGNORECASE)
+
+
+def _format_exhibit_placeholders(html_str: str) -> str:
+    """Format placeholder text like [Exhibit 1.1 — source figure 'img_001.png' not available...] into neat cards."""
+    def _rep(m):
+        raw_text = m.group(1)
+        return (
+            f'<div class="exhibit-placeholder-box">'
+            f'<div class="exhibit-placeholder-title"><b>Exhibit Information</b></div>'
+            f'<div class="exhibit-placeholder-body">{raw_text}</div>'
+            f'</div>'
+        )
+    return re.sub(r'\[(Exhibit\s+\d+[\.\d]*\s*[\—\-][^\]]+)\]', _rep, html_str)
 
 
 def markdown_to_pdf_bytes(
@@ -347,7 +461,9 @@ def markdown_to_pdf_bytes(
     base_dir: str | Path | None = None,
 ) -> bytes:
     """
-    Convert Markdown string into a styled PDF using xhtml2pdf.
+    Convert Markdown string into an Academic Publication-grade PDF.
+    Uses Microsoft Edge Headless with MathJax 3 (SVG vector math) as the primary engine.
+    Gracefully falls back to xhtml2pdf (pisa) if headless browser is unavailable.
 
     Args:
         md_content:   Markdown-formatted string
@@ -358,267 +474,294 @@ def markdown_to_pdf_bytes(
     Returns:
         PDF bytes (in-memory).
     """
+    # 1. Normalize table separators so markdown.markdown() parses tables properly
+    md_normalized = _normalize_markdown_tables(md_content)
 
-    # 1. Transform LaTeX display math $$ ... $$ into styled formula boxes
-    def _display_math_replacer(match):
-        raw_code = match.group(1).strip()
-        clean = clean_latex_math(raw_code)
-        return (
-            f'\n\n<div class="formula-box">'
-            f'<div class="formula-title">Mathematical Formula:</div>'
-            f'<div class="formula-body">{clean}</div>'
-            f'</div>\n\n'
-        )
-
-    md_sanitized = _sanitize_markdown_tables(md_content)
-    md_transformed = re.sub(r'\$\$(.*?)\$\$', _display_math_replacer, md_sanitized, flags=re.DOTALL)
-
-    # 2. Transform inline math $ ... $ into clean readable math codes
-    def _inline_math_replacer(match):
-        raw_code = match.group(1).strip()
-        if re.match(r'^\d+(\.\d+)?\s*$', raw_code):
-            return f"${raw_code}$"
-        clean = clean_latex_math(raw_code)
-        return f"<code>{clean}</code>"
-
-    md_transformed = re.sub(r'(?<!\$)\$(?!\$)(.*?)(?<!\$)\$(?!\$)', _inline_math_replacer, md_transformed)
-
-    # 3. Clean any remaining stray LaTeX fraction or text commands outside dollar signs
-    def _stray_frac(m):
-        return clean_latex_math(m.group(0))
-
-    md_transformed = re.sub(r'\\(?:frac|tfrac|dfrac)\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', _stray_frac, md_transformed)
-
-    def _stray_text(m):
-        return m.group(1)
-    md_transformed = re.sub(r'\\text\{([^}]+)\}', _stray_text, md_transformed)
-
+    # 2. Parse Markdown to HTML (without nl2br to prevent breaking Markdown tables)
     html_body = markdown.markdown(
-        md_transformed,
-        extensions=["extra", "tables", "fenced_code", "nl2br"]
+        md_normalized,
+        extensions=["extra", "tables", "fenced_code"]
     )
 
-    css_style = """
+    # 3. Resolve images to base64 data URIs & format exhibit placeholders
+    html_body = _resolve_and_embed_images(html_body, base_dir=base_dir)
+    html_body = _format_exhibit_placeholders(html_body)
+
+    # 4. Resolve MathJax script URI
+    mathjax_local = Path(__file__).resolve().parent.parent / "assets" / "tex-mml-chtml.js"
+    if mathjax_local.exists():
+        mathjax_src = mathjax_local.as_uri()
+    else:
+        mathjax_src = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+
+    # 5. Academic Book Typography CSS (Booktabs table layout, Serif fonts, dynamic margins)
+    academic_css = """
     @page {
-        size: a4 portrait;
-        margin: 1.8cm 1.8cm 2cm 1.8cm;
+        size: A4 portrait;
+        margin: 20mm 20mm 25mm 20mm;
+        @bottom-right {
+            content: counter(page);
+        }
     }
     body {
-        font-family: Georgia, 'Times New Roman', Times, serif;
-        font-size: 9.5pt;
-        line-height: 1.5;
+        font-family: 'Merriweather', Georgia, 'Times New Roman', serif;
+        font-size: 10pt;
+        line-height: 1.6;
         color: #1e293b;
+        background-color: #ffffff;
     }
     h1 {
-        font-family: Helvetica, Arial, sans-serif;
-        font-size: 19pt;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        font-size: 20pt;
         color: #0f172a;
-        margin-top: 18px;
+        margin-top: 24px;
         margin-bottom: 12px;
-        padding-bottom: 5px;
+        padding-bottom: 6px;
         border-bottom: 2px solid #0f172a;
         font-weight: bold;
         page-break-after: avoid;
     }
     h2 {
-        font-family: Helvetica, Arial, sans-serif;
-        font-size: 12.5pt;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        font-size: 13pt;
         color: #1e293b;
-        margin-top: 14px;
-        margin-bottom: 6px;
-        border-bottom: 1px solid #e2e8f0;
-        padding-bottom: 2px;
+        margin-top: 18px;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #cbd5e1;
+        padding-bottom: 4px;
         font-weight: bold;
         page-break-after: avoid;
     }
     h3 {
-        font-family: Helvetica, Arial, sans-serif;
-        font-size: 10.5pt;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        font-size: 11pt;
         color: #334155;
-        margin-top: 10px;
-        margin-bottom: 4px;
+        margin-top: 14px;
+        margin-bottom: 6px;
         font-weight: bold;
         page-break-after: avoid;
     }
     p {
-        margin-bottom: 7px;
+        margin-bottom: 8px;
         text-align: justify;
     }
-    blockquote {
-        background-color: #f8fafc;
-        border-left: 4px solid #0284c7;
-        padding: 8px 12px;
-        margin: 10px 0;
-        color: #0f172a;
-        font-size: 9pt;
-    }
-    hr {
-        border: 0;
-        height: 1px;
-        background-color: #cbd5e1;
-        margin: 12px 0;
-    }
+    /* Academic Booktabs Tables */
     table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 10px;
-        margin-bottom: 14px;
-        font-size: 8.5pt;
-        background-color: #ffffff;
-    }
-    th, td {
-        border: 1px solid #1e293b;
-        padding: 7px 10px;
-        vertical-align: middle;
+        margin: 18px 0 22px 0;
+        font-size: 9pt;
+        page-break-inside: avoid;
     }
     th {
+        border-top: 2px solid #0f172a;
+        border-bottom: 1.5px solid #0f172a;
+        padding: 8px 10px;
+        font-weight: bold;
+        text-align: left;
         background-color: #f8fafc;
         color: #0f172a;
-        font-weight: bold;
-        font-family: Helvetica, Arial, sans-serif;
-        text-align: center;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     }
-    tr:nth-child(even) td {
-        background-color: #ffffff;
+    td {
+        border-bottom: 1px solid #e2e8f0;
+        padding: 7px 10px;
+        vertical-align: top;
     }
-    pre {
-        font-family: Courier, monospace;
-        font-size: 6.8pt;
-        line-height: 1.15;
+    tr:last-child td {
+        border-bottom: 2px solid #0f172a;
+    }
+    /* Academic Blockquotes & Callouts */
+    blockquote {
+        border-left: 3.5px solid #0284c7;
         background-color: #f8fafc;
+        padding: 10px 16px;
+        margin: 14px 0;
+        font-style: normal;
         color: #0f172a;
-        padding: 6px 8px;
-        border: 1px solid #cbd5e1;
-        border-radius: 4px;
-        margin: 8px 0;
-        white-space: pre;
+        border-radius: 0 4px 4px 0;
+        page-break-inside: avoid;
     }
-    code {
-        font-family: Courier, monospace;
-        font-size: 8pt;
-        background-color: #f1f5f9;
-        color: #0f172a;
-        padding: 1px 3px;
-        border-radius: 3px;
-    }
-    img {
-        max-width: 90%;
-        max-height: 380px;
-        display: block;
-        margin: 10px auto;
-        text-align: center;
-    }
-    .prompt-box {
-        background-color: #f8fafc;
-        border: 1px solid #cbd5e1;
-        border-left: 4px solid #0284c7;
-        padding: 8px 12px;
-        margin: 10px 0;
-        border-radius: 4px;
-    }
-    .prompt-title {
-        font-family: Helvetica, Arial, sans-serif;
-        font-weight: bold;
-        color: #0369a1;
-        margin-bottom: 4px;
-        font-size: 9.5pt;
-    }
-    .whats-next-box {
-        background-color: #f0fdf4;
-        border: 1px solid #bbf7d0;
-        border-left: 4px solid #16a34a;
-        padding: 8px 12px;
-        margin: 10px 0;
-        border-radius: 4px;
-    }
-    .whats-next-title {
-        font-family: Helvetica, Arial, sans-serif;
-        font-weight: bold;
-        color: #166534;
-        margin-bottom: 4px;
-        font-size: 9.5pt;
-    }
-    .illustration-box {
-        background-color: #f0f9ff;
-        border: 1px solid #bae6fd;
-        border-left: 4px solid #0284c7;
-        padding: 8px 12px;
-        margin: 10px 0;
-        border-radius: 4px;
-    }
-    .illustration-box .title {
-        font-family: Helvetica, Arial, sans-serif;
-        font-weight: bold;
-        color: #0369a1;
-        margin-bottom: 4px;
-        font-size: 9.5pt;
-    }
+    /* Formula boxes & Math styles */
     .formula-box {
         background-color: #f8fafc;
         border: 1px solid #cbd5e1;
-        border-left: 4px solid #0f172a;
-        padding: 6px 10px;
-        margin: 8px 0;
+        border-left: 4px solid #0284c7;
+        padding: 10px 14px;
+        margin: 14px 0;
         border-radius: 4px;
+        page-break-inside: avoid;
     }
     .formula-title {
-        font-family: Helvetica, Arial, sans-serif;
         font-weight: bold;
-        color: #0f172a;
-        margin-bottom: 3px;
+        color: #0369a1;
+        margin-bottom: 4px;
         font-size: 9pt;
     }
-    .formula-body {
-        font-family: Courier, monospace;
-        font-size: 8.5pt;
-        color: #0f172a;
-        font-weight: bold;
-        background-color: #ffffff;
-        padding: 4px 6px;
-        border: 1px solid #e2e8f0;
-        border-radius: 3px;
-        margin-top: 3px;
-    }
-    .model-box {
-        background-color: #f0fdf4;
-        border: 1px solid #86efac;
-        border-left: 4px solid #16a34a;
-        padding: 8px 12px;
-        margin: 8px 0;
+    /* Exhibit Cards */
+    .exhibit-placeholder-box {
+        background-color: #f8fafc;
+        border: 1px dashed #94a3b8;
+        border-left: 4px solid #0284c7;
+        padding: 10px 16px;
+        margin: 14px 0;
         border-radius: 4px;
+        page-break-inside: avoid;
     }
-    .model-box .title {
+    .exhibit-placeholder-title {
         font-weight: bold;
-        color: #15803d;
+        color: #0369a1;
+        font-size: 9pt;
         margin-bottom: 3px;
-        font-size: 9.5pt;
+    }
+    .exhibit-placeholder-body {
+        color: #475569;
+        font-size: 8.5pt;
+        font-style: italic;
+    }
+    img {
+        max-width: 90%;
+        max-height: 420px;
+        display: block;
+        margin: 16px auto;
+        border-radius: 4px;
+        page-break-inside: avoid;
+    }
+    code {
+        font-family: Consolas, 'Courier New', monospace;
+        font-size: 8.5pt;
+        background-color: #f1f5f9;
+        padding: 2px 4px;
+        border-radius: 3px;
+    }
+    pre {
+        background-color: #f8fafc;
+        border: 1px solid #e2e8f0;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-family: Consolas, 'Courier New', monospace;
+        font-size: 8.5pt;
+        page-break-inside: avoid;
+    }
+    ul, ol {
+        margin: 8px 0 12px 20px;
+        padding: 0;
+    }
+    li {
+        margin-bottom: 4px;
     }
     """
 
-    full_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>{title}</title>
-        <style>{css_style}</style>
-    </head>
-    <body>
-        {html_body}
-    </body>
-    </html>
-    """
+    full_html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>{academic_css}</style>
+<script>
+window.MathJax = {{
+  tex: {{
+    inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+    displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']],
+    processEscapes: true
+  }},
+  svg: {{ fontCache: 'global' }}
+}};
+</script>
+<script src="{mathjax_src}"></script>
+</head>
+<body>
+{html_body}
+</body>
+</html>
+"""
 
-    text_pdf_buffer = io.BytesIO()
-    pisa_status = pisa.CreatePDF(
-        full_html,
-        dest=text_pdf_buffer,
-        link_callback=_make_link_callback(base_dir)
-    )
-    if pisa_status.err:
-        raise Exception("Error rendering PDF with xhtml2pdf")
+    # 6. Primary Render Attempt: Edge Headless with MathJax vector SVG math
+    edge_pdf_bytes = _render_via_edge_headless(full_html)
+    if edge_pdf_bytes:
+        final_bytes = edge_pdf_bytes
+    else:
+        # Fallback Render: xhtml2pdf (pisa) with formula cleanup
+        def _display_math_replacer(match):
+            raw_code = match.group(1).strip()
+            clean = clean_latex_math(raw_code)
+            return (
+                f'\n\n<div class="formula-box">'
+                f'<div class="formula-title">Mathematical Formula:</div>'
+                f'<div class="formula-body">{clean}</div>'
+                f'</div>\n\n'
+            )
 
-    text_pdf_bytes = text_pdf_buffer.getvalue()
+        md_clean_fallback = re.sub(r'\$\$(.*?)\$\$', _display_math_replacer, md_normalized, flags=re.DOTALL)
+        def _inline_replacer(match):
+            raw_code = match.group(1).strip()
+            if re.match(r'^\d+(\.\d+)?\s*$', raw_code):
+                return f"${raw_code}$"
+            clean = clean_latex_math(raw_code)
+            return f"<code>{clean}</code>"
+        md_clean_fallback = re.sub(r'(?<!\$)\$(?!\$)(.*?)(?<!\$)\$(?!\$)', _inline_replacer, md_clean_fallback)
+
+        html_body_fallback = markdown.markdown(md_clean_fallback, extensions=["extra", "tables", "fenced_code"])
+        html_body_fallback = _resolve_and_embed_images(html_body_fallback, base_dir=base_dir)
+        html_body_fallback = _format_exhibit_placeholders(html_body_fallback)
+
+        fallback_html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>{academic_css}</style>
+</head>
+<body>
+{html_body_fallback}
+</body>
+</html>
+"""
+        text_pdf_buffer = io.BytesIO()
+        pisa_status = pisa.CreatePDF(
+            fallback_html,
+            dest=text_pdf_buffer,
+            link_callback=_make_link_callback(base_dir)
+        )
+        if pisa_status.err:
+            raise Exception("Error rendering PDF with xhtml2pdf fallback")
+        final_bytes = text_pdf_buffer.getvalue()
+
+    # 7. Append physical page images if supplied
+    if not page_images:
+        return final_bytes
+
+    try:
+        combined_doc = fitz.open("pdf", final_bytes)
+        A4_W = 595.28
+        A4_H = 841.89
+
+        for img_path in page_images:
+            img_p = Path(img_path)
+            if not img_p.exists():
+                continue
+
+            img_page = combined_doc.new_page(width=A4_W, height=A4_H)
+            margin = 28.35
+            rect = fitz.Rect(margin, margin, A4_W - margin, A4_H - margin)
+            img_page.insert_image(rect, filename=str(img_path), keep_proportion=True)
+
+            page_label = img_p.stem.replace("page_", "Halaman ").replace("_dpi150", "").replace("_dpi100", "")
+            img_page.insert_text(
+                (margin, margin - 10),
+                f"▸ Visual Asli: {page_label}",
+                fontsize=7,
+                color=(0.6, 0.6, 0.6),
+            )
+
+        out_buf = io.BytesIO()
+        combined_doc.save(out_buf, garbage=1, deflate=True)
+        combined_doc.close()
+        return out_buf.getvalue()
+
+    except Exception as e:
+        print(f"[export_service] Hybrid image embed failed, falling back to text-only: {e}")
+        return final_bytes
 
     if not page_images:
         return text_pdf_bytes

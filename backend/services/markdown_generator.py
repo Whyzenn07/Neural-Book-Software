@@ -578,8 +578,11 @@ def humanize_academic_markdown(md_text: str) -> str:
     i = 0
     while i < len(lines):
         line = lines[i].strip()
-        # Remove orphaned table separator
+        # Normalize table separator instead of deleting if preceded by table row
         if re.match(r'^:?-+:?\s+:?-+:?', line) or line in [':--- :---', ':--- :--- :---', ':---: :---:']:
+            if i > 0 and '|' in lines[i-1]:
+                parts = line.split()
+                cleaned.append('| ' + ' | '.join(parts) + ' |')
             i += 1
             continue
         
