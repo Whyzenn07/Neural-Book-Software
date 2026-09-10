@@ -69,6 +69,11 @@ def _make_link_callback(base_dir: str | Path | None = None):
             if candidate3.exists():
                 return str(candidate3)
 
+            # Recursive search in base_dir for filename as fail-safe
+            for match in base.rglob(p.name):
+                if match.is_file():
+                    return str(match.resolve())
+
         return uri
 
     return link_callback
@@ -399,6 +404,7 @@ def _resolve_and_embed_images(html_str: str, base_dir: Path | str | None = None)
     """
     Convert image paths to base64 data URIs so that Edge Headless and xhtml2pdf
     can load them without local filesystem security blocks.
+    Recursively resolves image basenames across base_dir subfolders, temp folders, and Downloads.
     """
     def _img_replacer(match):
         prefix = match.group(1)
@@ -417,14 +423,52 @@ def _resolve_and_embed_images(html_str: str, base_dir: Path | str | None = None)
                 if c.exists() and c.is_file():
                     found_path = c
                     break
+            if not found_path:
+                for search_root in [b, b / "images", b.parent, b.parent / "images"]:
+                    if search_root.exists():
+                        sub_matches = [p for p in search_root.rglob(cand.name) if p.is_file()]
+                        if sub_matches:
+                            found_path = sub_matches[0]
+                            break
 
         if not found_path:
             # Search globally in temp or upload folders
             try:
-                from services.pdf_service import UPLOAD_DIR
-                matches = [p for p in UPLOAD_DIR.glob(f"**/{cand.name}") if p.is_file()]
-                if matches:
-                    found_path = matches[0]
+                upload_root = Path(tempfile.gettempdir()) / "ocr_book_maker"
+                if upload_root.exists():
+                    matches = [p for p in upload_root.rglob(cand.name) if p.is_file()]
+                    if matches:
+                        matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                        found_path = matches[0]
+            except Exception:
+                pass
+
+        if not found_path:
+            # Search in user's Downloads folder as fallback
+            try:
+                downloads_dir = Path.home() / "Downloads"
+                if downloads_dir.exists():
+                    matches = [p for p in downloads_dir.rglob(cand.name) if p.is_file()]
+                    if matches:
+                        matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                        found_path = matches[0]
+            except Exception:
+                pass
+
+        if not found_path:
+            # Case-insensitive search fallback
+            target_lower = cand.name.lower()
+            try:
+                upload_root = Path(tempfile.gettempdir()) / "ocr_book_maker"
+                downloads_dir = Path.home() / "Downloads"
+                for root in [upload_root, downloads_dir]:
+                    if root.exists():
+                        for p in root.rglob("*"):
+                            if p.is_file() and p.name.lower() == target_lower:
+                                found_path = p
+                                break
+                        if found_path:
+                            break
             except Exception:
                 pass
 
@@ -662,6 +706,107 @@ body {{
     return out.getvalue()
 
 
+def _transform_latex_figures_and_environments(text: str) -> str:
+    """
+    Transform LaTeX figure and image environments to clean HTML/Markdown images,
+    and convert/neutralize \\begin{center}...\\end{center} so MathJax does not fail
+    with "Unknown environment 'center'".
+    """
+    if not text:
+        return ""
+
+    def _parse_width(opt_str: str) -> str:
+        """Extract width percentage from options like width=0.85\\textwidth."""
+        if not opt_str:
+            return "88%"
+        m = re.search(r'width\s*=\s*([0-9\.]+)\s*(?:\\textwidth|\\linewidth)?', opt_str)
+        if m:
+            val = float(m.group(1))
+            if val <= 1.0:
+                pct = max(82, int(val * 100))
+                return f"{pct}%"
+            return f"{min(int(val), 100)}%"
+        m_pct = re.search(r'width\s*=\s*([0-9]+)\s*%', opt_str)
+        if m_pct:
+            pct = int(m_pct.group(1))
+            return f"{max(82, pct)}%"
+        return "88%"
+
+    # 1. Transform \begin{figure} ... \caption{...} ... \end{figure}
+    def _fig_replacer(match):
+        body = match.group(1)
+        img_m = re.search(r'\\includegraphics(?:\[(.*?)\])?\{([^}]+)\}', body)
+        cap_m = re.search(r'\\caption\{([^}]+)\}', body)
+        if not img_m:
+            return ""
+        opts = img_m.group(1) or ""
+        img_path = img_m.group(2).strip()
+        width = _parse_width(opts)
+        caption = cap_m.group(1).strip() if cap_m else Path(img_path).stem.replace("_", " ").title()
+        return (
+            f'\n\n<div class="exhibit-box" style="text-align: center; margin: 16px auto;">'
+            f'<div class="exhibit-image-wrap"><img src="{img_path}" alt="{caption}" style="max-width: {width}; max-height: 320px; object-fit: contain; border-radius: 4px;" /></div>'
+            f'<div class="exhibit-caption" style="font-size: 8.5pt; color: #64748b; font-style: italic; text-align: center; margin-top: 6px;">{caption}</div>'
+            f'</div>\n\n'
+        )
+
+    text = re.sub(r'\\begin\{figure\}(?:\[.*?\])?(.*?)\\end\{figure\}', _fig_replacer, text, flags=re.DOTALL | re.IGNORECASE)
+
+    # 2. Transform \begin{center}\s*\\includegraphics... \end{center}
+    def _center_img_replacer(match):
+        opts = match.group(1) or ""
+        img_path = match.group(2).strip()
+        width = _parse_width(opts)
+        clean_name = Path(img_path).stem.replace("_", " ").replace("-", " ").title()
+        return (
+            f'\n\n<div class="exhibit-image-wrap" style="text-align: center; margin: 16px auto;">'
+            f'<img src="{img_path}" alt="{clean_name}" style="max-width: {width}; max-height: 320px; object-fit: contain; border-radius: 4px; display: inline-block;" />'
+            f'</div>\n\n'
+        )
+
+    text = re.sub(
+        r'\\begin\{center\}\s*\\includegraphics(?:\[(.*?)\])?\{([^}]+)\}\s*\\end\{center\}',
+        _center_img_replacer,
+        text,
+        flags=re.IGNORECASE
+    )
+
+    # 3. Transform standalone \includegraphics[...]{...}
+    def _standalone_img_replacer(match):
+        opts = match.group(1) or ""
+        img_path = match.group(2).strip()
+        width = _parse_width(opts)
+        clean_name = Path(img_path).stem.replace("_", " ").replace("-", " ").title()
+        return (
+            f'\n\n<div class="exhibit-image-wrap" style="text-align: center; margin: 14px auto;">'
+            f'<img src="{img_path}" alt="{clean_name}" style="max-width: {width}; max-height: 320px; object-fit: contain; border-radius: 4px; display: inline-block;" />'
+            f'</div>\n\n'
+        )
+
+    text = re.sub(
+        r'\\includegraphics(?:\[(.*?)\])?\{([^}]+)\}',
+        _standalone_img_replacer,
+        text,
+        flags=re.IGNORECASE
+    )
+
+    # 4. Neutralize any remaining \begin{center} and \end{center}
+    text = re.sub(r'\\begin\{center\}', r'<div style="text-align: center;">', text, flags=re.IGNORECASE)
+    text = re.sub(r'\\end\{center\}', r'</div>', text, flags=re.IGNORECASE)
+
+    # 5. Neutralize other LaTeX environments that break MathJax
+    text = re.sub(r'\\begin\{flushleft\}', r'<div style="text-align: left;">', text, flags=re.IGNORECASE)
+    text = re.sub(r'\\end\{flushleft\}', r'</div>', text, flags=re.IGNORECASE)
+    text = re.sub(r'\\begin\{flushright\}', r'<div style="text-align: right;">', text, flags=re.IGNORECASE)
+    text = re.sub(r'\\end\{flushright\}', r'</div>', text, flags=re.IGNORECASE)
+    text = re.sub(r'\\begin\{minipage\}(?:\[.*?\])?\{.*?\}', r'<div>', text, flags=re.IGNORECASE)
+    text = re.sub(r'\\end\{minipage\}', r'</div>', text, flags=re.IGNORECASE)
+
+    # 6. Remove any leftover \centering
+    text = re.sub(r'\\centering\b', '', text, flags=re.IGNORECASE)
+
+    return text
+
 
 def markdown_to_pdf_bytes(
     md_content: str,
@@ -686,8 +831,11 @@ def markdown_to_pdf_bytes(
     # 1. Transform mermaid code blocks to <div class="mermaid">
     md_with_mermaid = _transform_mermaid_blocks(md_content)
 
+    # 1b. Transform LaTeX figure environments, \includegraphics, and \begin{center}
+    md_with_figures = _transform_latex_figures_and_environments(md_with_mermaid)
+
     # 2. Normalize table separators so markdown.markdown() parses tables properly
-    md_normalized = _normalize_markdown_tables(md_with_mermaid)
+    md_normalized = _normalize_markdown_tables(md_with_figures)
 
     # 3. Parse Markdown to HTML (without nl2br to prevent breaking Markdown tables)
     html_body = markdown.markdown(
@@ -1156,6 +1304,28 @@ def stamp_bottom_right_page_numbers(
         return pdf_bytes
 
 
+def strip_chapter_opening_duplicates(content: str) -> str:
+    """
+    Detect and eliminate redundant duplicate covers, redundant book title banners,
+    and trailing page-breaks that occur before Chapter/Module 1 heading.
+    Prevents duplicate cover pages and offset page numbers in merged book PDFs.
+    """
+    if not content:
+        return ""
+    ch_match = re.search(
+        r'^(?:#{1,3})\s+(?:Chapter\s*\d+|Module\s*[:\s]*\d+|\d+[\.:])\b.*$',
+        content,
+        flags=re.MULTILINE | re.IGNORECASE
+    )
+    if ch_match and ch_match.start() > 0:
+        preamble = content[:ch_match.start()]
+        has_cover_img = bool(re.search(r'(?:cover|banner|logo)[^)]*\.(?:png|jpg|jpeg|webp)', preamble, re.IGNORECASE))
+        has_page_break = "page-break" in preamble.lower()
+        if has_cover_img or (has_page_break and len(preamble.strip().splitlines()) <= 30):
+            return content[ch_match.start():].lstrip()
+    return content
+
+
 def merge_markdown_files_to_pdf(
     md_items: list[tuple[str, str]],
     output_pdf_path: str,
@@ -1168,7 +1338,13 @@ def merge_markdown_files_to_pdf(
     """
     Convert multiple Markdown chapters and merge them into one full-page PDF
     with optional cover image / executive typographic cover, and bottom-right page numbering throughout.
+    Guarantees:
+    1. Redundant opening chapter covers and duplicate book titles are cleanly stripped.
+    2. Cover image is unnumbered (skipped during footer stamping).
+    3. Table of Contents page ranges strictly and dynamically match the physical stamped numbers of each chapter.
     """
+    from services.markdown_generator import generate_front_matter_and_toc
+
     merged_doc = fitz.open()
     has_cover = False
 
@@ -1202,7 +1378,6 @@ def merge_markdown_files_to_pdf(
             if abs(aspect_img - aspect_a4) < 0.06:
                 target_rect = fitz.Rect(0, 0, A4_W, A4_H)
             else:
-                # Add elegant 12mm margins (34pt) and center the image proportionally
                 margin_x = 34.0
                 margin_y = 34.0
                 avail_w = A4_W - (margin_x * 2)
@@ -1231,15 +1406,83 @@ def merge_markdown_files_to_pdf(
         except Exception as e:
             print(f"[export_service] Error generating cover page: {e}")
 
-    # 3. Append Chapter PDFs
-    for idx, (name, content) in enumerate(md_items):
-        title = Path(name).stem.replace("_", " ")
-        pdf_bytes = markdown_to_pdf_bytes(content, title=title, base_dir=images_dir)
-        chapter_doc = fitz.open("pdf", pdf_bytes)
-        merged_doc.insert_pdf(chapter_doc)
-        chapter_doc.close()
+    # 3. Separate Front Matter from Content Chapters
+    content_items = []
+    has_fm_input = False
+    for name, content in md_items:
+        n_lower = name.lower()
+        if n_lower.startswith("fm_") or "front_matter" in n_lower or "toc" in n_lower:
+            has_fm_input = True
+        else:
+            content_items.append((name, content))
 
-    # 4. Stamp bottom right page numbers (skipping cover page if present)
+    # Natural sort content chapters
+    def _nat_key(item):
+        nums = [int(x) for x in re.findall(r'\d+', item[0])]
+        return nums[0] if nums else 999
+    content_items.sort(key=_nat_key)
+
+    # 4. Clean content chapters and render to measure exact page counts
+    rendered_chapters = []
+    chapter_toc_info = []
+
+    for idx, (name, raw_content) in enumerate(content_items, start=1):
+        clean_content = strip_chapter_opening_duplicates(raw_content)
+        stem = Path(name).stem
+        title = stem.replace("_", " ")
+
+        pdf_bytes = markdown_to_pdf_bytes(clean_content, title=title, base_dir=images_dir)
+        ch_doc = fitz.open("pdf", pdf_bytes)
+        p_count = max(1, ch_doc.page_count)
+        rendered_chapters.append(ch_doc)
+
+        h_match = re.search(r'^(?:#{1,3})\s+(.*)$', clean_content, re.MULTILINE)
+        if h_match:
+            raw_h = h_match.group(1).strip()
+            clean_topic = re.sub(r'^(?:Chapter\s*\d+|Module\s*[:\s]*\d+|\d+[\.\)])\s*[:\—\-]?\s*', '', raw_h, flags=re.IGNORECASE).strip()
+            topic_name = clean_topic if clean_topic else title
+        else:
+            topic_name = title
+
+        chapter_toc_info.append({
+            "idx": idx,
+            "title": topic_name,
+            "page_count": p_count,
+        })
+
+    # 5. Determine if Table of Contents should be included
+    need_toc = has_fm_input or len(content_items) > 1
+
+    if need_toc and rendered_chapters:
+        # Front Matter (TOC) is stamped as Page 1
+        # Content Chapter 1 starts on stamped Page 2
+        cur_stamped_page = 2
+        for ch in chapter_toc_info:
+            start_p = cur_stamped_page
+            end_p = cur_stamped_page + ch["page_count"] - 1
+            ch["book_start_page"] = start_p
+            ch["book_end_page"] = end_p
+            ch["start_page"] = start_p
+            ch["end_page"] = end_p
+            cur_stamped_page = end_p + 1
+
+        b_name = book_title or (Path(content_items[0][0]).stem if content_items else "Course Material")
+        fm_md = generate_front_matter_and_toc(
+            book_name=b_name,
+            chapters=chapter_toc_info,
+            single_page=True,
+        )
+        fm_pdf = markdown_to_pdf_bytes(fm_md, title="Table of Contents", base_dir=images_dir)
+        fm_doc = fitz.open("pdf", fm_pdf)
+        merged_doc.insert_pdf(fm_doc)
+        fm_doc.close()
+
+    # 6. Append all rendered chapter PDFs
+    for ch_doc in rendered_chapters:
+        merged_doc.insert_pdf(ch_doc)
+        ch_doc.close()
+
+    # 7. Stamp bottom right page numbers (skipping cover page if present)
     out_buf = io.BytesIO()
     merged_doc.save(out_buf, garbage=1, deflate=True)
     merged_doc.close()
@@ -1279,8 +1522,9 @@ def create_md_to_pdf_zip_package(
     for idx, (name, content) in enumerate(md_items, start=1):
         stem = Path(name).stem
         title = stem.replace("_", " ")
+        clean_content = strip_chapter_opening_duplicates(content)
 
-        pdf_bytes = markdown_to_pdf_bytes(content, title=title, base_dir=images_dir)
+        pdf_bytes = markdown_to_pdf_bytes(clean_content, title=title, base_dir=images_dir)
 
         # Get custom starting page number for this chapter if provided (e.g. Chapter 1: 1, Chapter 2: 21)
         start_pg = chapter_start_pages[idx - 1] if chapter_start_pages and idx - 1 < len(chapter_start_pages) else 1

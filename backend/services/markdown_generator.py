@@ -156,12 +156,15 @@ def get_golden_front_matter() -> Optional[str]:
 def generate_front_matter_and_toc(
     book_name: str,
     chapters: list[dict],
-    cover_image_path: Optional[str] = None
+    cover_image_path: Optional[str] = None,
+    single_page: bool = False
 ) -> str:
     """
     Generate clean, publication-standard Front Matter & Master Table of Contents
     with accurate, actual page ranges from the input document.
     Formatted cleanly matching academic course textbook standard.
+    When single_page=True (e.g. when an external book cover page is present),
+    generates a unified 1-page executive Table of Contents without stray page breaks.
     """
     clean_title = book_name.replace("_", " ").replace("-", " ").strip()
     main_title = re.sub(r'(?i)\s*(?:final\s*study\s*material|study\s*material|with\s*index\s*page\s*number).*', '', clean_title).strip()
@@ -238,12 +241,33 @@ def generate_front_matter_and_toc(
         end = int(b_end) if b_end is not None else int(ch.get("end_page", start))
         
         toc_rows.append(f"""      <tr>
-        <td style="border: 1px solid #000; padding: 10px; text-align: center;">{idx}.</td>
-        <td style="border: 1px solid #000; padding: 10px;">{clean_topic}</td>
-        <td style="border: 1px solid #000; padding: 10px; text-align: center;">{start} – {end}</td>
+        <td style="border: 1px solid #000; padding: 8px; text-align: center;">{idx}.</td>
+        <td style="border: 1px solid #000; padding: 8px;">{clean_topic}</td>
+        <td style="border: 1px solid #000; padding: 8px; text-align: center;">{start} – {end}</td>
       </tr>""")
 
     toc_rows_html = "\n".join(toc_rows)
+
+    if single_page:
+        return f"""<div style="text-align: center; margin-top: 15px; margin-bottom: 20px;">
+  <h1 style="font-size: 20pt; font-weight: bold; color: #0f172a; border-bottom: none; margin-bottom: 6px; letter-spacing: 0.5px;">{display_title}</h1>
+  <div style="font-size: 11pt; font-weight: 600; color: #475569; margin-bottom: 12px; letter-spacing: 0.5px;">{sub_title} • BBA (Hons.) SEMESTER-III (2025-29)</div>
+  <div style="font-style: italic; text-decoration: underline; font-size: 16pt; font-weight: bold; color: #0f172a; margin-top: 18px; margin-bottom: 14px;">Table of Contents</div>
+</div>
+
+<table style="width: 100%; border-collapse: collapse;">
+  <thead>
+    <tr>
+      <th style="width: 15%; border: 1px solid #000; padding: 8px; text-align: center; font-style: italic; font-weight: bold;">Module No.</th>
+      <th style="width: 65%; border: 1px solid #000; padding: 8px; text-align: center; font-style: italic; font-weight: bold;">Topic</th>
+      <th style="width: 20%; border: 1px solid #000; padding: 8px; text-align: center; font-style: italic; font-weight: bold;">Page No.</th>
+    </tr>
+  </thead>
+  <tbody>
+{toc_rows_html}
+  </tbody>
+</table>
+"""
 
     return f"""<div style="text-align: center; margin-top: 25px; margin-bottom: 25px;">
   <h1 style="font-size: 22pt; font-weight: bold; color: #0f172a; border-bottom: none; margin-bottom: 8px; letter-spacing: 0.5px;">{display_title}</h1>

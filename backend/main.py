@@ -41,6 +41,7 @@ from services.export_service import (
     create_md_to_pdf_zip_package,
     stamp_bottom_right_page_numbers,
     markdown_to_pdf_bytes,
+    strip_chapter_opening_duplicates,
 )
 from services.markdown_generator import (
     generate_rich_markdown_page,
@@ -946,7 +947,11 @@ async def convert_markdown_files_to_merged_pdf(
     # Stage 2: Refine raw OCR Markdown to Final Structured Markdown before rendering
     refined_md_items: list[tuple[str, str]] = []
     has_fm = any(name.startswith("FM_") or "front_matter" in name.lower() for name, _ in md_items)
-    content_items = [(name, text) for name, text in md_items if not (name.startswith("FM_") or "front_matter" in name.lower())]
+    content_items = [
+        (name, strip_chapter_opening_duplicates(text))
+        for name, text in md_items
+        if not (name.startswith("FM_") or "front_matter" in name.lower())
+    ]
     
     if not has_fm and len(content_items) > 1:
         # Calculate real page counts per chapter for the TOC
@@ -966,7 +971,7 @@ async def convert_markdown_files_to_merged_pdf(
             })
             cur_page += p_count
 
-        fm_content = generate_front_matter_and_toc(base_name, chapter_toc_data)
+        fm_content = generate_front_matter_and_toc(base_name, chapter_toc_data, single_page=True)
         refined_md_items.append(("FM_Front_Matter_and_TOC.md", fm_content))
 
     chapter_seq = 1
@@ -974,10 +979,11 @@ async def convert_markdown_files_to_merged_pdf(
         if name.startswith("FM_") or "front_matter" in name.lower():
             refined_md_items.append((name, content))
         else:
+            clean_c = strip_chapter_opening_duplicates(content)
             nums = [int(t) for t in re.findall(r'\d+', name)]
             chapter_num = nums[0] if nums else chapter_seq
             title = Path(name).stem.replace("_", " ")
-            refined = refine_raw_ocr_to_final_markdown(content, chapter_idx=chapter_num, title=title, book_name=base_name)
+            refined = refine_raw_ocr_to_final_markdown(clean_c, chapter_idx=chapter_num, title=title, book_name=base_name)
             refined_md_items.append((name, refined))
             chapter_seq += 1
 
@@ -1054,10 +1060,11 @@ async def convert_job_ocr_to_merged_pdf(job_id: str):
         if fname.startswith("FM_") or "front_matter" in fname.lower():
             refined_md_items.append((fname, raw_text))
         else:
+            clean_c = strip_chapter_opening_duplicates(raw_text)
             nums = [int(t) for t in re.findall(r'\d+', fname)]
             chapter_num = nums[0] if nums else chapter_seq
             title = Path(fname).stem.replace("_", " ")
-            refined = refine_raw_ocr_to_final_markdown(raw_text, chapter_idx=chapter_num, title=title, book_name=clean_name)
+            refined = refine_raw_ocr_to_final_markdown(clean_c, chapter_idx=chapter_num, title=title, book_name=clean_name)
             refined_md_items.append((fname, refined))
             chapter_seq += 1
 
