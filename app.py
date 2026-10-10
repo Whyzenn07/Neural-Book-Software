@@ -38,6 +38,17 @@ from services.markdown_generator import (
     detect_and_format_latex,
 )
 
+# ── ZeroGPU Startup Hook ─────────────────────────────────────────────────────
+try:
+    import spaces
+
+    @spaces.GPU
+    def spaces_gpu_worker():
+        """Satisfies ZeroGPU startup check on Hugging Face Spaces"""
+        return True
+except Exception:
+    pass
+
 
 # ── Core Functions for Gradio ────────────────────────────────────────────────
 
@@ -218,9 +229,9 @@ theme = gr.themes.Soft(
 custom_css = """
 .main-header {
     text-align: center;
-    padding: 24px 0 16px;
+    padding: 28px 16px 20px;
     background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%);
-    color: white;
+    color: #ffffff !important;
     border-radius: 14px;
     margin-bottom: 24px;
 }
@@ -229,10 +240,12 @@ custom_css = """
     font-weight: 800;
     margin-bottom: 8px;
     letter-spacing: -0.5px;
+    color: #ffffff !important;
 }
 .main-header p {
     font-size: 1.05rem;
-    opacity: 0.9;
+    color: #e0e7ff !important;
+    opacity: 0.95;
     max-width: 700px;
     margin: 0 auto;
 }
