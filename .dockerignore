@@ -1,0 +1,14 @@
+.git
+.agents
+.gemini
+__pycache__
+*.pyc
+node_modules
+frontend/node_modules
+backend/__pycache__
+backend/services/__pycache__
+backend/uploads/*
+!backend/uploads/.gitkeep
+venv
+*.log
+cloudflared.exe
