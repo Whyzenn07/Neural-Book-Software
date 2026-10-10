@@ -5,6 +5,7 @@
  * Clean static Lucide SVG icons.
  */
 import { useState, useEffect, useRef } from 'react'
+import { getApiUrl } from '../../apiConfig'
 import {
   FileText,
   Download,
@@ -89,7 +90,7 @@ export default function Step5Confirm({ state, update, next, back }) {
     let isMounted = true
 
     const startProcessing = async () => {
-      if (!jobId) {
+      if (!jobId || String(jobId).startsWith('demo')) {
         setTimeout(() => {
           if (isMounted) {
             setPdfReady(true)
@@ -109,7 +110,7 @@ export default function Step5Confirm({ state, update, next, back }) {
       }
 
       try {
-        const res = await fetch('/api/process', {
+        const res = await fetch(getApiUrl('/api/process'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -168,7 +169,7 @@ export default function Step5Confirm({ state, update, next, back }) {
 
     const poll = async () => {
       try {
-        const res = await fetch(`/api/status/${jobId}`)
+        const res = await fetch(getApiUrl(`/api/status/${jobId}`))
         if (!res.ok) return
         const data = await res.json()
 
@@ -276,7 +277,7 @@ export default function Step5Confirm({ state, update, next, back }) {
           <div className="download-card-action">
             {isPdfReady ? (
               <a
-                href={jobId ? `/api/download/pdf/${jobId}/${pdfZipName}` : '#'}
+                href={jobId ? getApiUrl(`/api/download/pdf/${jobId}/${pdfZipName}`) : '#'}
                 download={pdfZipName}
                 className="btn-download-pdf"
               >
@@ -303,7 +304,7 @@ export default function Step5Confirm({ state, update, next, back }) {
           <div className="download-card-action">
             {isOcrReady ? (
               <a
-                href={jobId ? `/api/download/ocr/${jobId}/${ocrZipName}` : '#'}
+                href={jobId ? getApiUrl(`/api/download/ocr/${jobId}/${ocrZipName}`) : '#'}
                 download={ocrZipName}
                 className="btn-download-md"
               >
@@ -328,7 +329,7 @@ export default function Step5Confirm({ state, update, next, back }) {
             </span>
           </div>
           <a
-            href={jobId ? `/api/download/merged-pdf/${jobId}/${mergedPdfName}` : '#'}
+            href={jobId ? getApiUrl(`/api/download/merged-pdf/${jobId}/${mergedPdfName}`) : '#'}
             download={mergedPdfName}
             className="btn-cloudconvert-download"
           >

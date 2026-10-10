@@ -11,6 +11,7 @@
  * - Full English user interface with crisp static Lucide icons
  */
 import { useState, useRef } from 'react'
+import { getApiUrl } from '../../apiConfig'
 import {
   FileText,
   Download,
@@ -230,7 +231,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
         formData.append('files', file)
       })
 
-      const queryUrl = `/api/convert-md-to-pdf?generate_cover=${generateCover && !coverFile ? 'true' : 'false'}`
+      const queryUrl = getApiUrl(`/api/convert-md-to-pdf?generate_cover=${generateCover && !coverFile ? 'true' : 'false'}`)
       const res = await fetch(queryUrl, {
         method: 'POST',
         body: formData,
@@ -257,7 +258,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
     setConvertingJobMd(true)
 
     try {
-      const res = await fetch(`/api/convert-job-md-to-pdf/${jobId}`, {
+      const res = await fetch(getApiUrl(`/api/convert-job-md-to-pdf/${jobId}`), {
         method: 'POST',
       })
 
@@ -371,7 +372,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
               </div>
               {jobMergedResult ? (
                 <a
-                  href={jobMergedResult.download_url}
+                  href={getApiUrl(jobMergedResult.download_url)}
                   download={jobMergedResult.filename}
                   className="btn-cloudconvert-download"
                 >
@@ -712,7 +713,7 @@ export default function Step7MdToPdf({ state, update, reset, back }) {
                       <span>{mergedPdfResult.filename} Created Successfully!</span>
                     </div>
                     <a
-                      href={mergedPdfResult.download_url}
+                      href={getApiUrl(mergedPdfResult.download_url)}
                       download={mergedPdfResult.filename}
                       className="btn-download-merged-pdf"
                     >

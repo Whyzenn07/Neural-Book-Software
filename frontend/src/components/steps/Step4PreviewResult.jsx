@@ -4,6 +4,7 @@
  * Features chapter badge tags on each page card and triggers the Cross-Check Modal before Step 5.
  */
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { getApiUrl } from '../../apiConfig'
 
 export default function Step4PreviewResult({ state, update, next, back }) {
   const {
@@ -85,7 +86,7 @@ export default function Step4PreviewResult({ state, update, next, back }) {
       if (!preloadedMap.current.has(p)) {
         preloadedMap.current.add(p)
         const img = new Image()
-        img.src = `/api/page-image/${jobId}/${p}?dpi=120`
+        img.src = getApiUrl(`/api/page-image/${jobId}/${p}?dpi=120`)
       }
     })
   }, [activeModalPage, currentIdx, displayPages, jobId])
@@ -195,7 +196,7 @@ export default function Step4PreviewResult({ state, update, next, back }) {
                   <div className="preview-img-container">
                     {jobId ? (
                       <img
-                        src={`/api/page-image/${jobId}/${pageNum}?dpi=35`}
+                        src={getApiUrl(`/api/page-image/${jobId}/${pageNum}?dpi=35`)}
                         alt={`Book Page ${bookPageNum}`}
                         className="preview-img"
                         loading="eager"
@@ -313,13 +314,13 @@ export default function Step4PreviewResult({ state, update, next, back }) {
                 <div className="lightbox-img-holder">
                   {/* Instant cached thumbnail */}
                   <img
-                    src={`/api/page-image/${jobId}/${activeModalPage}?dpi=90`}
+                    src={getApiUrl(`/api/page-image/${jobId}/${activeModalPage}?dpi=90`)}
                     alt={`Page ${activeModalPage}`}
                     className="lightbox-base-img"
                   />
                   {/* HD upgrade fades in */}
                   <img
-                    src={`/api/page-image/${jobId}/${activeModalPage}?dpi=150`}
+                    src={getApiUrl(`/api/page-image/${jobId}/${activeModalPage}?dpi=150`)}
                     alt={`High Res Page ${activeModalPage}`}
                     className={`lightbox-hd-img ${hdLoaded ? 'loaded' : ''}`}
                     onLoad={() => setHdLoaded(true)}

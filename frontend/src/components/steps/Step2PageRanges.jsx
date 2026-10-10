@@ -4,6 +4,7 @@
  * Right: Sidebar with Start Page, End Page, Index Page, and Pages to Remove controls
  */
 import { useState, useMemo } from 'react'
+import { getApiUrl } from '../../apiConfig'
 
 export default function Step2PageRanges({ state, update, next, back }) {
   const { jobId, pageCount = 100 } = state
@@ -166,7 +167,7 @@ export default function Step2PageRanges({ state, update, next, back }) {
                   <div className="page-img-wrapper">
                     {jobId ? (
                       <img
-                        src={`/api/page-image/${jobId}/${pageNum}?dpi=35`}
+                        src={getApiUrl(`/api/page-image/${jobId}/${pageNum}?dpi=35`)}
                         alt={`Page ${pageNum}`}
                         className="page-thumbnail-img"
                         loading="lazy"

@@ -4,6 +4,7 @@
  * Right side: Automatic TOC detection from Index Page + manual chapter editing
  */
 import { useState, useEffect, useMemo } from 'react'
+import { getApiUrl } from '../../apiConfig'
 
 export default function Step3DefineChapters({ state, update, next, back }) {
   const {
@@ -81,7 +82,7 @@ export default function Step3DefineChapters({ state, update, next, back }) {
     setDetectMsg(null)
 
     try {
-      const res = await fetch(`/api/detect-toc/${jobId}/${indexPage}`)
+      const res = await fetch(getApiUrl(`/api/detect-toc/${jobId}/${indexPage}`))
       if (res.ok) {
         const data = await res.json()
         if (data.detected && data.chapters && data.chapters.length > 0) {
@@ -217,7 +218,7 @@ export default function Step3DefineChapters({ state, update, next, back }) {
             <div className="index-visual-img-wrapper">
               {jobId ? (
                 <img
-                  src={`/api/page-image/${jobId}/${indexPage}?dpi=150`}
+                  src={getApiUrl(`/api/page-image/${jobId}/${indexPage}?dpi=150`)}
                   alt={`Index Page ${indexPage}`}
                   className="index-real-img"
                   loading="lazy"

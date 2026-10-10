@@ -3,6 +3,7 @@
  * Clean single-focus upload zone with validation warning modals
  */
 import { useState, useRef } from 'react'
+import { getApiUrl } from '../../apiConfig'
 
 export default function Step1Upload({ state, update, next }) {
   const [dragging, setDragging] = useState(false)
@@ -11,6 +12,26 @@ export default function Step1Upload({ state, update, next }) {
   const inputRef = useRef(null)
 
   const { fileName, pageCount, jobId } = state
+
+  const handleLoadDemo = () => {
+    update({
+      jobId: 'demo-sample-job',
+      fileName: 'Sample_Academic_Book.pdf',
+      cleanName: 'Sample_Academic_Book',
+      pageCount: 30,
+      startPage: 1,
+      endPage: 30,
+      indexPage: 3,
+      removedPages: [],
+      filteredPages: Array.from({ length: 30 }, (_, i) => i + 1),
+      chapters: [
+        { heading: "Chapter 1", title: "Introduction to Neural Networks", start_page: 1, end_page: 10, page_count: 10 },
+        { heading: "Chapter 2", title: "Deep Learning Architectures", start_page: 11, end_page: 20, page_count: 10 },
+        { heading: "Chapter 3", title: "Practical Implementation & Cases", start_page: 21, end_page: 30, page_count: 10 }
+      ],
+    })
+    next()
+  }
 
   const handleFile = async (file) => {
     if (!file) return
@@ -42,7 +63,7 @@ export default function Step1Upload({ state, update, next }) {
       const formData = new FormData()
       formData.append('file', file)
 
-      const res = await fetch('/api/upload', { method: 'POST', body: formData })
+      const res = await fetch(getApiUrl('/api/upload'), { method: 'POST', body: formData })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || `Upload failed (${res.status})`)
@@ -179,7 +200,15 @@ export default function Step1Upload({ state, update, next }) {
       </div>
 
       {/* Action Bar */}
-      <div className="action-bar" style={{ marginTop: 32 }}>
+      <div className="action-bar" style={{ marginTop: 32, display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={handleLoadDemo}
+          style={{ minWidth: 200 }}
+        >
+          <i className="fas fa-play-circle text-amber"></i> Coba Live Demo (Sample)
+        </button>
         <button
           type="button"
           className="btn-primary"
