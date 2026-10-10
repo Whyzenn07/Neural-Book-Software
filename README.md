@@ -1,14 +1,3 @@
----
-title: Neural Book Software
-emoji: 📚
-colorFrom: indigo
-colorTo: purple
-sdk: gradio
-sdk_version: 4.44.0
-app_file: app.py
-pinned: false
----
-
 # 📚 Neural Book Software (SKIPS - PDF Chapter Extractor)
 
 A modern, high-performance web application designed for splitting PDF books into custom chapters, performing ultra-fast parallel multi-threaded OCR text extraction, and batch exporting chapters into organized PDF and Markdown (.zip) formats.
